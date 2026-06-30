@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 480px;
+      margin: 30px auto;
+      color: #1a1a1a;
+    }
+    h1 { font-size: 18px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+    .row span.name { font-size: 13px; }
+    .row .actions button {
+      margin-left: 6px;
+      font-size: 12px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .default-tag {
+      font-size: 11px;
+      color: #2fa86f;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    input[type="file"] { margin: 14px 0; }
+  </style>
+</head>
+<body>
+  <h1>Manage resumes</h1>
+  <p style="font-size:13px; color:#555;">
+    Upload the PDF resumes you want available when running the autopilot.
+    Set one as default, it will be pre-selected in the popup unless you change it.
+  </p>
+  <input type="file" id="fileInput" accept="application/pdf" multiple />
+  <div id="list"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

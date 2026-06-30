@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: 14px;
+      margin: 0;
+      color: #1a1a1a;
+    }
+    h1 {
+      font-size: 15px;
+      margin: 0 0 10px;
+    }
+    select, button {
+      width: 100%;
+      padding: 8px;
+      font-size: 13px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    button.primary {
+      background: #2fa86f;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.primary:disabled {
+      background: #9bd4b8;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: white;
+      cursor: pointer;
+    }
+    #status {
+      font-size: 12px;
+      color: #444;
+      max-height: 160px;
+      overflow-y: auto;
+      background: #f7f7f7;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 8px;
+      white-space: pre-wrap;
+    }
+    .hint {
+      font-size: 11px;
+      color: #777;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Jobright Outreach Autopilot</h1>
+  <div class="hint">Open a Jobright job page with an Insider Connection list, pick a resume, then hit Start.</div>
+
+  <label for="resumeSelect" style="font-size:12px;">Resume to attach</label>
+  <select id="resumeSelect"></select>
+
+  <button id="startBtn" class="primary">Start on this page</button>
+  <button id="optionsBtn" class="secondary">Manage resumes</button>
+
+  <div id="status">Idle.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Jobright Outreach Autopilot",
+  "version": "0.1.0",
+  "description": "Speeds up sending referral emails and LinkedIn connection requests from Jobright's Insider Connection list.",
+  "permissions": ["storage", "tabs", "scripting", "activeTab", "unlimitedStorage"],
+  "host_permissions": [
+    "https://jobright.ai/*",
+    "https://*.jobright.ai/*",
+    "https://mail.google.com/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Jobright Outreach Autopilot"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://jobright.ai/*", "https://*.jobright.ai/*"],
+      "js": ["content_jobright.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["content_gmail.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.linkedin.com/*", "https://linkedin.com/*"],
+      "js": ["content_linkedin.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
