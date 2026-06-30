@@ -1,11 +1,26 @@
 // background.js
 // Acts as the message hub. Content scripts cannot talk to each other directly,
 // so they all send messages here, and this script opens tabs / stores data
-// so the next tab knows what to do when it loads.
+// so the next tab knows what to do when it loads. It also keeps the
+// outreach log, the record of everyone contacted, used for stats and for
+// skipping people already reached out to.
+
+function addOutreachEntry(entry) {
+  chrome.storage.local.get("outreachLog", (data) => {
+    const log = data.outreachLog || [];
+    log.push({
+      id: Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+      date: Date.now(),
+      status: "sent",
+      ...entry,
+    });
+    chrome.storage.local.set({ outreachLog: log.slice(-3000) });
+  });
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "OPEN_GMAIL_COMPOSE") {
-    // message.payload = { to, subject, body, resumeId, personName }
+    // message.payload = { to, subject, body, resumeId, personName, company }
     chrome.storage.local.set({ pendingGmailJob: message.payload }, () => {
       const url =
         "https://mail.google.com/mail/?view=cm&fs=1&tf=1" +
@@ -22,8 +37,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "GMAIL_SEND_DETECTED") {
     // Sent from content_gmail.js once it sees the compose window close.
-    // Close that tab and tell the Jobright tab it can move on.
-    chrome.storage.local.get("jobrightTabId", (data) => {
+    // Log it, close that tab, and tell the Jobright tab it can move on.
+    chrome.storage.local.get(["jobrightTabId", "pendingGmailJob"], (data) => {
+      const job = data.pendingGmailJob;
+      if (job) {
+        addOutreachEntry({
+          name: job.personName,
+          company: job.company || "",
+          channel: "email",
+          identifier: job.to,
+        });
+      }
       if (data.jobrightTabId) {
         chrome.tabs.sendMessage(data.jobrightTabId, { type: "PERSON_EMAIL_DONE" }).catch(() => {});
       }
@@ -35,7 +59,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "LINKEDIN_SEND_DETECTED") {
-    chrome.storage.local.get("jobrightTabId", (data) => {
+    chrome.storage.local.get(["jobrightTabId", "pendingLinkedinJob"], (data) => {
+      const job = data.pendingLinkedinJob;
+      if (job) {
+        addOutreachEntry({
+          name: job.personName,
+          company: job.company || "",
+          channel: "linkedin",
+          identifier: job.personName,
+        });
+      }
       if (data.jobrightTabId) {
         chrome.tabs.sendMessage(data.jobrightTabId, { type: "PERSON_LINKEDIN_DONE" }).catch(() => {});
       }
@@ -44,6 +77,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     return false;
+  }
+
+  if (message.type === "GET_OUTREACH_LOG") {
+    chrome.storage.local.get("outreachLog", (data) => {
+      sendResponse(data.outreachLog || []);
+    });
+    return true;
   }
 
   if (message.type === "OPEN_LINKEDIN_PROFILE") {

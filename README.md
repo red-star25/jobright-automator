@@ -22,6 +22,22 @@ nothing goes out without you reviewing it first.
 3. In Chrome, make sure `mailto:` style links aren't required, this extension
    opens Gmail directly in a tab, it does not rely on your Mac's Mail app.
 
+## Outreach log and dashboard
+
+Every email or LinkedIn connection sent through the autopilot gets recorded
+locally (name, company, channel, date). Two things use this:
+
+- **Automatic skipping**: if someone shows up again, on this job page or a
+  different one at the same company, the autopilot checks this log first
+  and skips them instead of messaging them twice.
+- **Dashboard**: click "View outreach log" in the popup to see everyone
+  you've contacted, today's count, total count, and a reply rate. There's
+  no way to detect replies automatically, so it's a manual "Mark replied"
+  button per person, click it whenever someone gets back to you.
+
+The popup also shows a quick Today / Total / Reply rate summary without
+needing to open the full dashboard.
+
 ## Running it
 
 1. Open a Jobright job page that has an "Insider Connection" section with people listed.

@@ -116,6 +116,16 @@ async function run() {
     return;
   }
 
+  // The name Jobright's page scraping found can be wrong ("Unknown") for
+  // LinkedIn-only flows, the profile page itself is a much more reliable
+  // source, so prefer that whenever it's available.
+  const h1 = document.querySelector("h1");
+  const profileName = h1 ? visibleText(h1) : "";
+  if (profileName && profileName.length < 80) {
+    job.personName = profileName;
+    chrome.storage.local.set({ pendingLinkedinJob: { ...job, personName: profileName } });
+  }
+
   const log = (text) => {
     console.log("[Jobright Autopilot]", `${job.personName}: ${text}`);
     chrome.runtime.sendMessage({ type: "LOG_STATUS", text: `${job.personName}: ${text}` });

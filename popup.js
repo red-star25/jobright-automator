@@ -2,7 +2,28 @@
 const resumeSelect = document.getElementById("resumeSelect");
 const startBtn = document.getElementById("startBtn");
 const optionsBtn = document.getElementById("optionsBtn");
+const dashboardBtn = document.getElementById("dashboardBtn");
 const statusBox = document.getElementById("status");
+const statToday = document.getElementById("statToday");
+const statTotal = document.getElementById("statTotal");
+const statRate = document.getElementById("statRate");
+
+function renderOutreachStats() {
+  chrome.storage.local.get("outreachLog", (data) => {
+    const log = data.outreachLog || [];
+    const todayStr = new Date().toDateString();
+    const today = log.filter((e) => new Date(e.date).toDateString() === todayStr).length;
+    const replied = log.filter((e) => e.status === "replied").length;
+    const rate = log.length ? Math.round((replied / log.length) * 100) : 0;
+    statToday.textContent = today;
+    statTotal.textContent = log.length;
+    statRate.textContent = rate + "%";
+  });
+}
+
+dashboardBtn.addEventListener("click", () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+});
 
 function loadResumes() {
   chrome.storage.local.get(["resumes", "defaultResumeId"], (data) => {
@@ -59,4 +80,6 @@ optionsBtn.addEventListener("click", () => {
 
 loadResumes();
 renderStatus();
+renderOutreachStats();
 setInterval(renderStatus, 1000);
+setInterval(renderOutreachStats, 2000);

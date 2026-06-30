@@ -27,6 +27,37 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// --- Outreach log / skip-if-already-contacted -------------------------------
+
+let currentCompany = "";
+let contactedSet = new Set();
+
+function dedupeKey(channel, identifier, company) {
+  return `${channel}::${(identifier || "").toLowerCase().trim()}::${channel === "email" ? "" : (company || "").toLowerCase().trim()}`;
+}
+
+function isAlreadyContacted(channel, identifier) {
+  return contactedSet.has(dedupeKey(channel, identifier, currentCompany));
+}
+
+function markContactedLocally(channel, identifier) {
+  contactedSet.add(dedupeKey(channel, identifier, currentCompany));
+}
+
+async function loadContactedSet() {
+  const entries = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_OUTREACH_LOG" }, (res) => resolve(res || []));
+  });
+  contactedSet = new Set(entries.map((e) => dedupeKey(e.channel, e.identifier, e.company)));
+}
+
+function extractCompanyName() {
+  const heading = findElementByTextMatch(document.body, /Insider Connection\s*@/i);
+  if (!heading) return "";
+  const match = visibleText(heading).match(/Insider Connection\s*@\s*(.+)/i);
+  return match ? match[1].trim() : "";
+}
+
 // Polls until `check()` returns a truthy value, or times out.
 async function waitFor(check, { timeout = 6000, interval = 250 } = {}) {
   const start = Date.now();
@@ -231,6 +262,11 @@ async function tryEmail(person, resumeId) {
   if (btnText.includes("linkedin")) {
     // "Contact Info Not Found!" card, its button skips straight to the
     // LinkedIn connect modal instead of an email one.
+    if (isAlreadyContacted("linkedin", realName)) {
+      log(`${realName}: already contacted on LinkedIn before, skipping.`);
+      closeAnyModal();
+      return { linkedinHandled: true };
+    }
     log(`${realName}: no email found, connecting on LinkedIn instead.`);
     connectBtn.click();
     await sleep(1000);
@@ -259,9 +295,16 @@ async function tryEmail(person, resumeId) {
     return { linkedinHandled: false };
   }
 
+  if (isAlreadyContacted("email", to)) {
+    log(`${realName}: already emailed (${to}) before, skipping.`);
+    closeAnyModal();
+    return { linkedinHandled: false };
+  }
+
+  markContactedLocally("email", to);
   await new Promise((resolve) => {
     chrome.runtime.sendMessage(
-      { type: "OPEN_GMAIL_COMPOSE", payload: { to, subject: subject || "", body: body || "", resumeId, personName: realName } },
+      { type: "OPEN_GMAIL_COMPOSE", payload: { to, subject: subject || "", body: body || "", resumeId, personName: realName, company: currentCompany } },
       resolve
     );
   });
@@ -288,6 +331,10 @@ function extractLinkedinModalData(modal) {
 }
 
 async function tryLinkedin(person) {
+  if (isAlreadyContacted("linkedin", person.name)) {
+    log(`${person.name}: already contacted on LinkedIn before, skipping.`);
+    return;
+  }
   person.linkedinBtn.click();
   await sleep(400);
   await handleLinkedinModalAfterOpen(person.name);
@@ -321,8 +368,9 @@ async function handleLinkedinModalAfterOpen(personName) {
     return;
   }
 
+  markContactedLocally("linkedin", personName);
   await new Promise((resolve) => {
-    chrome.storage.local.set({ pendingLinkedinJob: { note: message, personName } }, resolve);
+    chrome.storage.local.set({ pendingLinkedinJob: { note: message, personName, company: currentCompany } }, resolve);
   });
 
   log(`${personName}: LinkedIn note ready, opening their profile now. Waiting for you to hit Send.`);
@@ -357,6 +405,10 @@ function closeAnyModal() {
 
 async function runAutomation(resumeId) {
   log("Starting run on this job page.");
+  currentCompany = extractCompanyName();
+  await loadContactedSet();
+  if (currentCompany) log(`Detected company: ${currentCompany}`);
+
   const container = findInsiderConnectionContainer();
   if (!container) {
     log("Could not find the Insider Connection section on this page. Scroll to it and try again.");
