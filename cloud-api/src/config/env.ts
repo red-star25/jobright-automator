@@ -11,6 +11,9 @@ const envSchema = z.object({
   DEV_AUTH_TOKEN: z.string().min(8),
   DEV_USER_PLAN: z.enum(["free", "pro"]).default("free"),
   STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRO_PRICE_ID: z.string().optional(),
+  SUPABASE_JWT_SECRET: z.string().optional(),
   ALLOWED_EXTENSION_ORIGINS: z.string().optional(),
 });
 

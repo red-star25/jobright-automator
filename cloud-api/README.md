@@ -21,10 +21,14 @@ Edit `.env`:
 |----------|----------|-------|
 | `DATABASE_URL` | yes | PostgreSQL connection string |
 | `OPENAI_API_KEY` | yes | Server-side OpenAI key |
-| `JWT_SECRET` | yes | Reserved for future JWT auth |
-| `DEV_AUTH_TOKEN` | yes | Bearer token for local testing |
+| `JWT_SECRET` | yes | Signs 7-day InsiderReach session JWTs |
+| `DEV_AUTH_TOKEN` | yes | Bearer token for extension / local testing |
 | `DEV_USER_PLAN` | no | `free` (default) or `pro` |
-| `STRIPE_SECRET_KEY` | no | Loaded when present; billing routes not implemented yet |
+| `SUPABASE_JWT_SECRET` | no | Accept Supabase access tokens from `web/` sign-in |
+| `STRIPE_SECRET_KEY` | no | Enables `/v1/stripe/checkout` and webhook |
+| `STRIPE_WEBHOOK_SECRET` | no | Stripe webhook signature verification |
+| `STRIPE_PRO_PRICE_ID` | no | Stripe Price ID for Pro plan |
+| `PUBLIC_APP_URL` | no | Checkout success/cancel redirect base URL |
 | `ALLOWED_EXTENSION_ORIGINS` | no | Comma-separated CORS origins |
 
 Create the database and run migrations:
@@ -52,9 +56,13 @@ See **[DEPLOY.md](./DEPLOY.md)** for the recommended **Neon (free Postgres) + Ra
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/health` | no | Health check |
+| POST | `/v1/auth/session` | Bearer | Exchange dev/Supabase token for 7-day IR JWT |
+| GET | `/v1/auth/session` | Bearer | Session info + usage |
 | GET | `/v1/me` | Bearer | Plan + monthly usage |
 | POST | `/v1/rewrite` | Bearer | AI rewrite / rewritePro |
 | POST | `/v1/usage/events` | Bearer | Client telemetry |
+| POST | `/v1/stripe/checkout` | Bearer | Start Stripe Checkout for Pro |
+| POST | `/v1/stripe/webhook` | Stripe sig | Subscription lifecycle (server-to-server) |
 
 ## Example curl requests
 
@@ -160,16 +168,16 @@ Set `DEV_USER_PLAN=pro` in `.env` to test Pro limits locally.
 
 - Never log full `originalMessage`, `resumeText`, or Bearer tokens.
 - Cache keys hash resume content instead of storing raw resume text in the key.
-- JWT auth is stubbed; use `DEV_AUTH_TOKEN` until JWT issuance is added.
+- Auth accepts: `DEV_AUTH_TOKEN`, InsiderReach JWT (7-day), or Supabase access JWT (when `SUPABASE_JWT_SECRET` is set).
 
 ## Extension integration
 
-The InsiderReach extension is wired to this API (v0.3.1+):
+The InsiderReach extension is wired to this API (v0.3.2+):
 
-1. [`config.js`](../config.js): `API_BASE` → `http://localhost:8080`, `WEB_APP_BASE` → `http://localhost:3000` (dashboard/sign-in)
-2. Options → paste `DEV_AUTH_TOKEN` from this folder's `.env` → Save (auto-selects Cloud AI)
-3. Options → AI provider → **Cloud (InsiderReach)**
-4. Reload extension at `chrome://extensions`
-5. Run a Jobright page with AI mode **Ask every time** → click **Rewrite**
+1. [`config.js`](../config.js): `API_BASE` → your Railway URL
+2. Options → paste `DEV_AUTH_TOKEN` from Railway → Save (auto-selects Cloud AI)
+3. Extension exchanges token for a 7-day session via `POST /v1/auth/session`
+4. Options → **Upgrade to Pro** opens Stripe Checkout (when billing env vars are set)
+5. Reload extension at `chrome://extensions`
 
-The Next.js app in `web/` is optional for local dev (billing dashboard + Supabase sign-in).
+The Next.js app in `web/` is optional (dashboard + Supabase sign-in).

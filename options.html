@@ -117,14 +117,15 @@
       <div class="btn-row">
         <button type="button" id="signInBtn" class="primary-btn">Sign in to Cloud AI</button>
         <button type="button" id="signOutBtn">Sign out</button>
-        <a id="upgradeLink" class="button-link" href="#" target="_blank" rel="noopener">Open dashboard</a>
+        <button type="button" id="upgradeBtn" class="primary-btn">Upgrade to Pro</button>
+        <a id="upgradeLink" class="button-link" href="#" target="_blank" rel="noopener">Web dashboard</a>
       </div>
       <p id="accountStatus" class="small-note"></p>
     </div>
 
-    <label for="cloudApiToken">Cloud API token (local dev)</label>
-    <input type="password" id="cloudApiToken" placeholder="Same value as DEV_AUTH_TOKEN in cloud-api/.env" autocomplete="off" />
-    <p class="small-note">For local cloud-api testing, paste your <code>DEV_AUTH_TOKEN</code> from <code>cloud-api/.env</code>, save, and set AI provider to Cloud. Sign-in below uses the Next.js web app on port 3000 (optional).</p>
+    <label for="cloudApiToken">Cloud API token</label>
+    <input type="password" id="cloudApiToken" placeholder="Same as DEV_AUTH_TOKEN on Railway" autocomplete="off" />
+    <p class="small-note">Paste the <code>DEV_AUTH_TOKEN</code> from Railway (or local <code>cloud-api/.env</code>), save, and choose Cloud AI. Optional: use Sign in when the web dashboard is deployed.</p>
 
     <label for="aiProvider">AI provider</label>
     <select id="aiProvider">

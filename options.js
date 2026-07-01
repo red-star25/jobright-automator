@@ -18,6 +18,7 @@ const accountStatus = document.getElementById("accountStatus");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const upgradeLink = document.getElementById("upgradeLink");
+const upgradeBtn = document.getElementById("upgradeBtn");
 const localKeySection = document.getElementById("localKeySection");
 const cloudApiTokenInput = document.getElementById("cloudApiToken");
 
@@ -240,6 +241,7 @@ function saveAiSettings() {
     aiResumeText: resumeTextInput.value.trim(),
     aiCustomInstructions: customInstructionsInput.value.trim(),
     debugLogging: !!debugLoggingInput.checked,
+    irSession: null,
   }, () => {
     aiStatus.textContent = "Saved.";
     setTimeout(() => { aiStatus.textContent = ""; }, 1800);
@@ -250,6 +252,18 @@ function saveAiSettings() {
 
 if (cloudApiTokenInput) {
   cloudApiTokenInput.addEventListener("change", saveAiSettings);
+}
+
+if (upgradeBtn) {
+  upgradeBtn.addEventListener("click", async () => {
+    accountStatus.textContent = "Opening checkout...";
+    try {
+      await openStripeCheckout();
+      accountStatus.textContent = "Checkout opened in a new tab.";
+    } catch (err) {
+      accountStatus.textContent = err.message || String(err);
+    }
+  });
 }
 
 signInBtn.addEventListener("click", async () => {

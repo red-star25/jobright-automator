@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "InsiderReach",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "AI-assisted Jobright outreach for personalized Gmail drafts and LinkedIn connection notes.",
   "icons": {
     "16": "icons/icon16.png",
