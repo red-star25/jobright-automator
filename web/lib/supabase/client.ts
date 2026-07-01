@@ -6,5 +6,10 @@ export function createBrowserClient() {
   if (!url || !key) {
     throw new Error("Missing Supabase client environment variables");
   }
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: {
+      detectSessionInUrl: true,
+      flowType: "pkce",
+    },
+  });
 }

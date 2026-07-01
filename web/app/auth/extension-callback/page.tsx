@@ -1,45 +1,78 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import type { Session } from "@supabase/supabase-js";
+import {
+  clearExtensionRedirect,
+  readExtensionRedirect,
+} from "@/lib/auth/extension-redirect";
 import { createBrowserClient } from "@/lib/supabase/client";
+
+async function waitForSession(maxMs = 12000): Promise<Session | null> {
+  const supabase = createBrowserClient();
+  const started = Date.now();
+
+  while (Date.now() - started < maxMs) {
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data.session) return data.session;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  return null;
+}
 
 function ExtensionCallbackInner() {
   const searchParams = useSearchParams();
-  const extRedirect = searchParams.get("ext_redirect");
   const [message, setMessage] = useState("Completing sign in...");
+  const handledRef = useRef(false);
 
   useEffect(() => {
-    const supabase = createBrowserClient();
+    if (handledRef.current) return;
+    handledRef.current = true;
 
     async function finish() {
+      const extRedirect = readExtensionRedirect(searchParams.get("ext_redirect"));
+
       const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
       const hashParams = new URLSearchParams(hash);
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      const expiresIn = hashParams.get("expires_in");
+      const hashAccessToken = hashParams.get("access_token");
+      const hashRefreshToken = hashParams.get("refresh_token");
+      const hashExpiresIn = hashParams.get("expires_in");
 
-      if (accessToken && refreshToken) {
-        redirectToExtension(accessToken, refreshToken, expiresIn);
+      if (hashAccessToken && hashRefreshToken) {
+        redirectToExtension(
+          extRedirect,
+          hashAccessToken,
+          hashRefreshToken,
+          hashExpiresIn
+        );
         return;
       }
 
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data.session) {
+      const session = await waitForSession();
+      if (!session) {
         setMessage("Could not complete sign in. Close this tab and try again from the extension.");
         return;
       }
 
       redirectToExtension(
-        data.session.access_token,
-        data.session.refresh_token,
-        String(data.session.expires_in || 3600)
+        extRedirect,
+        session.access_token,
+        session.refresh_token,
+        String(session.expires_in || 3600)
       );
     }
 
-    function redirectToExtension(accessToken: string, refreshToken: string, expiresIn: string | null) {
+    function redirectToExtension(
+      extRedirect: string | null,
+      accessToken: string,
+      refreshToken: string,
+      expiresIn: string | null
+    ) {
       if (!extRedirect) {
+        clearExtensionRedirect();
         window.location.href = "/dashboard";
         return;
       }
@@ -51,11 +84,12 @@ function ExtensionCallbackInner() {
         refresh_token: refreshToken,
         expires_at: String(expiresAt),
       }).toString();
+      clearExtensionRedirect();
       window.location.href = target.toString();
     }
 
     finish();
-  }, [extRedirect]);
+  }, [searchParams]);
 
   return (
     <main className="mx-auto max-w-md px-6 py-16">

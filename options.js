@@ -267,13 +267,19 @@ if (upgradeBtn) {
 }
 
 signInBtn.addEventListener("click", async () => {
-  accountStatus.textContent = "Opening sign in...";
+  accountStatus.textContent = "Opening sign-in popup — complete Google sign-in there (do not close early).";
   try {
     await signInWithCloudAi();
     accountStatus.textContent = "Signed in.";
     await refreshAccountUi();
   } catch (err) {
-    accountStatus.textContent = err.message || String(err);
+    const msg = err.message || String(err);
+    if (/did not approve access/i.test(msg)) {
+      accountStatus.textContent =
+        "Sign-in popup was closed or canceled. Click Sign in to Cloud AI again and finish Google sign-in in the popup.";
+    } else {
+      accountStatus.textContent = msg;
+    }
   }
 });
 

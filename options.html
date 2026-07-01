@@ -110,7 +110,11 @@
 
   <div class="section">
     <h1>Account</h1>
-    <p class="small-note">Sign in for Cloud AI with monthly usage limits. Local AI (your own OpenAI key) remains available for personal use.</p>
+    <p class="small-note">
+      <strong>Extension sign-in is separate from the web dashboard.</strong>
+      Signing in at localhost or the Web dashboard link does not connect the extension automatically.
+      Click <strong>Sign in to Cloud AI</strong> below and finish sign-in in the popup (do not close it early).
+    </p>
     <div class="account-box">
       <div id="accountSummary">Not signed in.</div>
       <div id="usageSummary"></div>
@@ -123,16 +127,25 @@
       <p id="accountStatus" class="small-note"></p>
     </div>
 
-    <label for="cloudApiToken">Cloud API token</label>
-    <input type="password" id="cloudApiToken" placeholder="Same as DEV_AUTH_TOKEN on Railway" autocomplete="off" />
-    <p class="small-note">Paste the <code>DEV_AUTH_TOKEN</code> from Railway (or local <code>cloud-api/.env</code>), save, and choose Cloud AI. Optional: use Sign in when the web dashboard is deployed.</p>
-
     <label for="aiProvider">AI provider</label>
     <select id="aiProvider">
+      <option value="cloud">Cloud (InsiderReach) — recommended</option>
       <option value="local">Local (your OpenAI key)</option>
-      <option value="cloud">Cloud (InsiderReach)</option>
     </select>
-    <p class="small-note">Cloud AI requires a Cloud API token (local dev) or sign-in above. Local AI keeps your key in Chrome storage on this browser.</p>
+    <p class="small-note">
+      <strong>Cloud:</strong> InsiderReach runs AI for you with monthly Rewrite limits. Sign in above (or use a dev token while testing).
+      <strong>Local:</strong> You paste your own OpenAI key; requests go to OpenAI directly and bypass InsiderReach billing/limits.
+    </p>
+
+    <details style="margin-top:12px;">
+      <summary class="small-note" style="cursor:pointer;font-weight:600;">Advanced: Cloud API token (developers only)</summary>
+      <p class="small-note" style="margin-top:8px;">
+        For local backend testing only. Paste <code>DEV_AUTH_TOKEN</code> from <code>cloud-api/.env</code> or Railway, click Save AI settings, and choose Cloud.
+        Normal users should use <strong>Sign in to Cloud AI</strong> instead — leave this blank.
+      </p>
+      <label for="cloudApiToken">Cloud API token</label>
+      <input type="password" id="cloudApiToken" placeholder="Leave blank unless developing locally" autocomplete="off" />
+    </details>
   </div>
 
   <div class="section">

@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import {
+  extensionCallbackUrl,
+  saveExtensionRedirect,
+} from "@/lib/auth/extension-redirect";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 function SignInForm() {
@@ -12,17 +16,28 @@ function SignInForm() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (extRedirect) saveExtensionRedirect(extRedirect);
+  }, [extRedirect]);
+
+  function oauthRedirectTo() {
+    if (extRedirect) return extensionCallbackUrl(window.location.origin);
+    return `${window.location.origin}/dashboard`;
+  }
+
   async function signInWithGoogle() {
     setLoading(true);
     setMessage("");
     const supabase = createBrowserClient();
-    const redirectTo = extRedirect
-      ? `${window.location.origin}/auth/extension-callback?ext_redirect=${encodeURIComponent(extRedirect)}`
-      : `${window.location.origin}/dashboard`;
+    if (!extRedirect) await supabase.auth.signOut();
+    if (extRedirect) saveExtensionRedirect(extRedirect);
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo },
+      options: {
+        redirectTo: oauthRedirectTo(),
+        queryParams: { prompt: "select_account" },
+      },
     });
     if (error) {
       setMessage(error.message);
@@ -35,13 +50,12 @@ function SignInForm() {
     setLoading(true);
     setMessage("");
     const supabase = createBrowserClient();
-    const redirectTo = extRedirect
-      ? `${window.location.origin}/auth/extension-callback?ext_redirect=${encodeURIComponent(extRedirect)}`
-      : `${window.location.origin}/dashboard`;
+    if (!extRedirect) await supabase.auth.signOut();
+    if (extRedirect) saveExtensionRedirect(extRedirect);
 
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: redirectTo },
+      options: { emailRedirectTo: oauthRedirectTo() },
     });
     setLoading(false);
     if (error) setMessage(error.message);
