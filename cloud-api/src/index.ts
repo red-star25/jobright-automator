@@ -27,11 +27,16 @@ app.setErrorHandler((error, _request, reply) => {
 });
 
 async function start() {
-  await pool.query("select 1");
-  await pruneExpiredCache();
-
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
   app.log.info(`InsiderReach Cloud API listening on port ${env.PORT}`);
+
+  try {
+    await pool.query("select 1");
+    await pruneExpiredCache();
+    app.log.info("Database connected");
+  } catch (err) {
+    app.log.error({ err }, "Database warmup failed — check DATABASE_URL on Railway");
+  }
 }
 
 start().catch((err) => {
