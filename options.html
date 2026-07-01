@@ -60,6 +60,43 @@
     #aiStatus { font-size: 12px; color: #2fa86f; }
     .check-row { display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:13px; }
     .check-row input { width:auto; }
+    .account-box {
+      border: 1px solid #d8f2e5;
+      background: #f7fffb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .usage-bar {
+      height: 8px;
+      background: #e8e8e8;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .usage-bar > span {
+      display: block;
+      height: 100%;
+      background: #2fa86f;
+    }
+    .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .btn-row button, .btn-row a.button-link {
+      padding: 7px 12px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: white;
+      cursor: pointer;
+      font-size: 12px;
+      text-decoration: none;
+      color: inherit;
+      display: inline-block;
+    }
+    .btn-row button.primary-btn {
+      background: #2fa86f;
+      color: white;
+      border: none;
+    }
+    #accountStatus, #localKeySection { margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -71,10 +108,30 @@
   <input type="file" id="fileInput" accept="application/pdf,.pdf,text/plain,.txt,.md" multiple />
   <p id="uploadStatus" class="small-note"></p>
 
+  <div class="section">
+    <h1>Account</h1>
+    <p class="small-note">Sign in for Cloud AI with monthly usage limits. Local AI (your own OpenAI key) remains available for personal use.</p>
+    <div class="account-box">
+      <div id="accountSummary">Not signed in.</div>
+      <div id="usageSummary"></div>
+      <div class="btn-row">
+        <button type="button" id="signInBtn" class="primary-btn">Sign in to Cloud AI</button>
+        <button type="button" id="signOutBtn">Sign out</button>
+        <a id="upgradeLink" class="button-link" href="#" target="_blank" rel="noopener">Open dashboard</a>
+      </div>
+      <p id="accountStatus" class="small-note"></p>
+    </div>
+
+    <label for="aiProvider">AI provider</label>
+    <select id="aiProvider">
+      <option value="local">Local (your OpenAI key)</option>
+      <option value="cloud">Cloud (InsiderReach)</option>
+    </select>
+    <p class="small-note">Cloud AI requires sign-in above. Local AI keeps your key in Chrome storage on this browser.</p>
+  </div>
 
   <div class="section">
     <h1>AI Settings</h1>
-    <p class="small-note">Local version: your OpenAI API key is stored in Chrome local storage on this browser. Use this for personal testing only.</p>
 
     <label for="runMode">Default run mode</label>
     <select id="runMode">
@@ -92,8 +149,11 @@
     </select>
     <p class="small-note">Use Off when you want InsiderReach to keep the automation moving with Jobright's original message.</p>
 
-    <label for="openaiApiKey">OpenAI API key</label>
-    <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
+    <div id="localKeySection">
+      <p class="small-note">Local mode: your OpenAI API key is stored in Chrome local storage on this browser. Use this for personal testing only.</p>
+      <label for="openaiApiKey">OpenAI API key</label>
+      <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
+    </div>
 
     <label for="defaultTone">Default tone</label>
     <select id="defaultTone">
@@ -126,6 +186,8 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

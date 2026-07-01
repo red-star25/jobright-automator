@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "InsiderReach",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "description": "AI-assisted Jobright outreach for personalized Gmail drafts and LinkedIn connection notes.",
   "icons": {
     "16": "icons/icon16.png",
@@ -14,7 +14,8 @@
     "tabs",
     "scripting",
     "activeTab",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "identity"
   ],
   "host_permissions": [
     "https://jobright.ai/*",
@@ -22,7 +23,9 @@
     "https://mail.google.com/*",
     "https://www.linkedin.com/*",
     "https://linkedin.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "http://localhost:3000/*",
+    "https://app.insiderreach.com/*"
   ],
   "background": {
     "service_worker": "background.js"
