@@ -36,6 +36,41 @@ export async function getUserById(userId: string): Promise<AuthUser | null> {
   return result.rows[0] || null;
 }
 
+export async function ensureUserFromSupabase(userId: string, email?: string | null): Promise<AuthUser> {
+  const result = await query<{ id: string; email: string | null; plan: PlanId }>(
+    `insert into users (id, email, plan)
+     values ($1, $2, 'free')
+     on conflict (id) do update set
+       email = coalesce(excluded.email, users.email),
+       updated_at = now()
+     returning id, email, plan`,
+    [userId, email || null]
+  );
+  return result.rows[0];
+}
+
+export async function setUserPlan(userId: string, plan: PlanId, subscriptionStatus = "none") {
+  await query(
+    `update users set plan = $1, updated_at = now() where id = $2`,
+    [plan, userId]
+  );
+}
+
+export async function setStripeCustomerId(userId: string, customerId: string) {
+  await query(`update users set stripe_customer_id = $1, updated_at = now() where id = $2`, [
+    customerId,
+    userId,
+  ]);
+}
+
+export async function getUserByStripeCustomerId(customerId: string): Promise<AuthUser | null> {
+  const result = await query<{ id: string; email: string | null; plan: PlanId }>(
+    `select id, email, plan from users where stripe_customer_id = $1`,
+    [customerId]
+  );
+  return result.rows[0] || null;
+}
+
 async function getOrCreateUsageCounter(userId: string, periodStart: string) {
   const existing = await query<{ id: number; rewrite_count: number; pro_count: number }>(
     `select id, rewrite_count, pro_count from usage_counters

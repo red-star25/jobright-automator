@@ -57,10 +57,14 @@ DATABASE_URL="postgresql://..." npm run migrate
 | `DATABASE_URL`      | Neon connection string                              |
 | `OPENAI_API_KEY`    | Your OpenAI key                                     |
 | `JWT_SECRET`        | Random 32+ char string                              |
-| `DEV_AUTH_TOKEN`    | Strong random token (your extension auth until JWT) |
+| `DEV_AUTH_TOKEN`    | Strong random token (extension auth until sign-in) |
 | `DEV_USER_PLAN`     | `free`                                              |
 | `PORT`              | Leave unset (Railway injects it)                    |
-| `STRIPE_SECRET_KEY` | Optional, for later                                 |
+| `SUPABASE_JWT_SECRET` | Optional — Supabase project JWT secret (Settings → API) |
+| `STRIPE_SECRET_KEY` | Optional — Stripe secret key (`sk_live_...` or test) |
+| `STRIPE_WEBHOOK_SECRET` | Optional — from Stripe webhook endpoint |
+| `STRIPE_PRO_PRICE_ID` | Optional — Stripe Price ID for Pro subscription |
+| `PUBLIC_APP_URL`    | Optional — success/cancel URLs for checkout (default `https://app.insiderreach.com`) |
 
 
 1. **Settings** → **Networking** → **Generate Domain**
@@ -98,11 +102,46 @@ const INSIDERREACH_CONFIG = {
 
 ---
 
-## Step 4 — Lock down before public launch
+## Step 4 — JWT sessions + Stripe (optional)
+
+After the API is live, enable production auth and billing:
+
+### JWT session exchange
+
+The extension exchanges your `DEV_AUTH_TOKEN` (or a Supabase access token) for a **7-day InsiderReach JWT** via `POST /v1/auth/session`. No extra Railway config needed beyond `JWT_SECRET`.
+
+To accept Supabase sign-in tokens from the `web/` dashboard, add:
+
+| Variable | Where to find it |
+| -------- | ---------------- |
+| `SUPABASE_JWT_SECRET` | Supabase → Project Settings → API → JWT Secret |
+
+### Stripe Pro checkout
+
+1. Create a **Pro** subscription Price in [Stripe Dashboard](https://dashboard.stripe.com/products)
+2. Add Railway variables: `STRIPE_SECRET_KEY`, `STRIPE_PRO_PRICE_ID`
+3. Create a Stripe **Webhook** endpoint:
+   - URL: `https://YOUR-RAILWAY-DOMAIN/v1/stripe/webhook`
+   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+4. Copy the webhook signing secret → Railway `STRIPE_WEBHOOK_SECRET`
+5. Set `PUBLIC_APP_URL` to your dashboard URL (where users land after checkout)
+
+Test checkout from the extension: **Options → Upgrade to Pro**.
+
+Verify session exchange:
+
+```bash
+curl -X POST https://YOUR-RAILWAY-DOMAIN/v1/auth/session \
+  -H "Authorization: Bearer YOUR-DEV-AUTH-TOKEN"
+```
+
+---
+
+## Step 5 — Lock down before public launch
 
 - [ ] Generate a new `DEV_AUTH_TOKEN` for production (not the local dev one)
 - [ ] Never commit `.env` or tokens to git
-- [ ] Implement JWT auth and remove dev token from Options UI
+- [ ] Rotate `JWT_SECRET` if ever exposed
 - [ ] Add custom domain later (e.g. `api.insiderreach.com`) in Railway → Custom Domain
 
 ---

@@ -1,4 +1,4 @@
-// Auth helpers for Cloud AI (Supabase session stored in chrome.storage.local).
+// Auth helpers for Cloud AI (InsiderReach JWT + optional Supabase sign-in).
 
 function storageGet(keys) {
   return new Promise((resolve) => {
@@ -28,11 +28,12 @@ async function saveAuthSession(session) {
     authSession: session,
     aiProvider: "cloud",
     cloudUsage: null,
+    irSession: null,
   });
 }
 
 async function clearAuthSession() {
-  await storageRemove(["authSession", "cloudUsage"]);
+  await storageRemove(["authSession", "cloudUsage", "irSession"]);
 }
 
 async function refreshAuthSessionIfNeeded() {
@@ -83,12 +84,52 @@ function normalizeCloudMeResponse(json) {
   };
 }
 
-async function getCloudAuthToken() {
+async function getRawCloudCredential() {
   const data = await storageGet(["cloudApiToken", "authSession"]);
   const devToken = String(data.cloudApiToken || "").trim();
   if (devToken) return devToken;
   const session = await refreshAuthSessionIfNeeded();
   return session?.access_token || null;
+}
+
+async function exchangeIrSessionIfNeeded() {
+  const raw = await getRawCloudCredential();
+  if (!raw) return null;
+
+  const data = await storageGet(["irSession"]);
+  const now = Math.floor(Date.now() / 1000);
+  if (data.irSession?.access_token && Number(data.irSession.expires_at || 0) - now > 300) {
+    return data.irSession.access_token;
+  }
+
+  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
+  try {
+    const response = await fetch(`${apiBase}/v1/auth/session`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${raw}` },
+    });
+    if (!response.ok) return raw;
+
+    const json = await response.json();
+    if (!json.access_token) return raw;
+
+    const normalized = normalizeCloudMeResponse(json);
+    await storageSet({
+      irSession: {
+        access_token: json.access_token,
+        expires_at: json.expires_at,
+        email: json.email || "",
+      },
+      cloudUsage: normalized || data.cloudUsage || null,
+    });
+    return json.access_token;
+  } catch (_) {
+    return raw;
+  }
+}
+
+async function getCloudAuthToken() {
+  return exchangeIrSessionIfNeeded();
 }
 
 async function fetchCloudMe() {
@@ -106,6 +147,23 @@ async function fetchCloudMe() {
   if (!normalized) return null;
   await storageSet({ cloudUsage: normalized });
   return normalized;
+}
+
+async function openStripeCheckout() {
+  const token = await getCloudAuthToken();
+  if (!token) throw new Error("Sign in or add a Cloud API token first.");
+
+  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
+  const response = await fetch(`${apiBase}/v1/stripe/checkout`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = await response.json();
+  if (json.url) {
+    chrome.tabs.create({ url: json.url });
+    return;
+  }
+  throw new Error(json.error || "Could not start checkout.");
 }
 
 function parseAuthHash(url) {
@@ -146,10 +204,11 @@ async function signInWithCloudAi() {
       }
 
       await saveAuthSession(parsed);
+      await exchangeIrSessionIfNeeded();
       const me = await fetchCloudMe();
       if (me?.email) {
         parsed.email = me.email;
-        await saveAuthSession(parsed);
+        await storageSet({ authSession: parsed });
       }
       resolve(parsed);
     });
@@ -161,8 +220,7 @@ async function signOutCloudAi() {
 }
 
 async function getValidAccessToken() {
-  const session = await refreshAuthSessionIfNeeded();
-  return session?.access_token || null;
+  return getCloudAuthToken();
 }
 
 async function logCloudUsageEvent(payload) {

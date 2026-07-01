@@ -2,9 +2,11 @@ import Fastify from "fastify";
 import { env } from "./config/env.js";
 import { pool } from "./db/pool.js";
 import { registerCors } from "./middleware/cors.js";
+import { authSessionRoutes } from "./routes/auth-session.js";
 import { healthRoutes } from "./routes/health.js";
 import { meRoutes } from "./routes/me.js";
 import { rewriteRoutes } from "./routes/rewrite.js";
+import { stripeRoutes } from "./routes/stripe.js";
 import { usageEventRoutes } from "./routes/usage-events.js";
 import { pruneExpiredCache } from "./services/cache.js";
 
@@ -15,11 +17,24 @@ const app = Fastify({
   },
 });
 
+app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+  try {
+    if (request.url === "/v1/stripe/webhook") {
+      (request as { rawBody?: Buffer }).rawBody = body as Buffer;
+    }
+    done(null, JSON.parse((body as Buffer).toString("utf8")));
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
+
 await registerCors(app);
 await app.register(healthRoutes);
+await app.register(authSessionRoutes);
 await app.register(meRoutes);
 await app.register(rewriteRoutes);
 await app.register(usageEventRoutes);
+await app.register(stripeRoutes);
 
 app.setErrorHandler((error, _request, reply) => {
   app.log.error(error);
