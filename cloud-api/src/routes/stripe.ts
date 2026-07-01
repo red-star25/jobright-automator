@@ -51,6 +51,30 @@ export async function stripeRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, url: session.url });
   });
 
+  app.post("/v1/stripe/portal", { preHandler: authenticate }, async (request, reply) => {
+    const stripe = getStripe();
+    if (!stripe) {
+      return reply.code(503).send({ error: "Billing is not configured." });
+    }
+
+    const user = requireUser(request);
+    const row = await query<{ stripe_customer_id: string | null }>(
+      `select stripe_customer_id from users where id = $1`,
+      [user.id]
+    );
+    const customerId = row.rows[0]?.stripe_customer_id || null;
+    if (!customerId) {
+      return reply.code(400).send({ error: "No billing account found." });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: appUrl("/dashboard"),
+    });
+
+    return reply.send({ ok: true, url: session.url });
+  });
+
   app.post("/v1/stripe/webhook", async (request, reply) => {
     const stripe = getStripe();
     const webhookSecret = env.STRIPE_WEBHOOK_SECRET;

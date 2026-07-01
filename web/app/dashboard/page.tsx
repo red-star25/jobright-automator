@@ -131,7 +131,7 @@ export default function DashboardPage() {
         <p className="font-semibold">Chrome extension</p>
         <p className="mt-2">
           In InsiderReach Options, choose <strong>Cloud (InsiderReach)</strong> as your AI provider and sign in.
-          Outreach automation and your local outreach log stay in the extension.
+          Usage and billing are shared between this dashboard and the extension.
         </p>
       </div>
 

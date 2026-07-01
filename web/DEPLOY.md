@@ -42,10 +42,10 @@ The script prints your live URL and the exact `config.js` / `manifest.json` edit
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only; never expose to client |
-| `OPENAI_API_KEY` | For `/api/ai/personalize` |
-| `STRIPE_SECRET_KEY` | Stripe secret key |
-| `STRIPE_WEBHOOK_SECRET` | From Stripe webhook for `POST /api/stripe/webhook` |
-| `STRIPE_PRO_PRICE_ID` | Pro subscription price ID |
+| `CLOUD_API_URL` | Railway cloud-api URL (usage + billing source of truth) |
+| `NEXT_PUBLIC_CLOUD_API_URL` | Same as above (optional; for client-side references) |
+
+Stripe and OpenAI keys belong on **Railway (cloud-api)**, not Vercel. Do not configure `POST /api/stripe/webhook` on Vercel — use cloud-api `/v1/stripe/webhook` instead.
 
 5. Deploy → copy the production URL.
 
@@ -98,15 +98,17 @@ PUBLIC_APP_URL=https://YOUR-WEB-URL
 
 Used for Stripe checkout return URLs from the extension.
 
-### 6. Stripe webhook (web dashboard billing)
+### 6. Stripe webhook (cloud-api only)
 
-If billing goes through the **web** app (not only cloud-api), point a Stripe webhook at:
+Point Stripe at **cloud-api** on Railway (not this Vercel app):
 
 ```
-POST https://YOUR-WEB-URL/api/stripe/webhook
+POST https://jobright-automator-production.up.railway.app/v1/stripe/webhook
 ```
 
 Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
+
+Remove or disable any old webhook pointing at `https://YOUR-WEB-URL/api/stripe/webhook`.
 
 ---
 

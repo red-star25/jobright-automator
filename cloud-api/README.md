@@ -62,6 +62,7 @@ See **[DEPLOY.md](./DEPLOY.md)** for the recommended **Neon (free Postgres) + Ra
 | POST | `/v1/rewrite` | Bearer | AI rewrite / rewritePro |
 | POST | `/v1/usage/events` | Bearer | Client telemetry |
 | POST | `/v1/stripe/checkout` | Bearer | Start Stripe Checkout for Pro |
+| POST | `/v1/stripe/portal` | Bearer | Open Stripe billing portal |
 | POST | `/v1/stripe/webhook` | Stripe sig | Subscription lifecycle (server-to-server) |
 
 ## Example curl requests
