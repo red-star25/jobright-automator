@@ -21,7 +21,7 @@ function SignInForm() {
   }, [extRedirect]);
 
   function oauthRedirectTo() {
-    if (extRedirect) return extensionCallbackUrl(window.location.origin);
+    if (extRedirect) return extensionCallbackUrl(window.location.origin, extRedirect);
     return `${window.location.origin}/dashboard`;
   }
 

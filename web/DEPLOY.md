@@ -62,6 +62,7 @@ Redeploy after setting this to your **final** public URL (custom domain or `*.ve
 Supabase → **Authentication** → **URL Configuration** → **Redirect URLs**, add:
 
 - `https://YOUR-WEB-URL/auth/extension-callback`
+- `https://YOUR-WEB-URL/auth/extension-callback**` (wildcard — covers `?ext_redirect=...` from extension OAuth)
 - `https://YOUR-WEB-URL/dashboard`
 
 (Keep `http://localhost:3000/...` for local dev.)

@@ -38,6 +38,10 @@ export function clearExtensionRedirect() {
   document.cookie = `${COOKIE_KEY}=; path=/; max-age=0; samesite=lax`;
 }
 
-export function extensionCallbackUrl(origin: string) {
-  return `${origin}/auth/extension-callback`;
+export function extensionCallbackUrl(origin: string, extRedirect?: string | null) {
+  const url = new URL("/auth/extension-callback", origin);
+  if (extRedirect) {
+    url.searchParams.set("ext_redirect", extRedirect);
+  }
+  return url.toString();
 }

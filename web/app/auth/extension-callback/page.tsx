@@ -7,6 +7,7 @@ import type { Session } from "@supabase/supabase-js";
 import {
   clearExtensionRedirect,
   readExtensionRedirect,
+  saveExtensionRedirect,
 } from "@/lib/auth/extension-redirect";
 import { createBrowserClient } from "@/lib/supabase/client";
 
@@ -33,7 +34,9 @@ function ExtensionCallbackInner() {
     handledRef.current = true;
 
     async function finish() {
-      const extRedirect = readExtensionRedirect(searchParams.get("ext_redirect"));
+      const extRedirectFromQuery = searchParams.get("ext_redirect");
+      if (extRedirectFromQuery) saveExtensionRedirect(extRedirectFromQuery);
+      const extRedirect = extRedirectFromQuery || readExtensionRedirect();
 
       const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
       const hashParams = new URLSearchParams(hash);
