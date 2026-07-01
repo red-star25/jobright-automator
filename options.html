@@ -122,12 +122,16 @@
       <p id="accountStatus" class="small-note"></p>
     </div>
 
+    <label for="cloudApiToken">Cloud API token (local dev)</label>
+    <input type="password" id="cloudApiToken" placeholder="Same value as DEV_AUTH_TOKEN in cloud-api/.env" autocomplete="off" />
+    <p class="small-note">For local cloud-api testing, paste your <code>DEV_AUTH_TOKEN</code> from <code>cloud-api/.env</code>, save, and set AI provider to Cloud. Sign-in below uses the Next.js web app on port 3000 (optional).</p>
+
     <label for="aiProvider">AI provider</label>
     <select id="aiProvider">
       <option value="local">Local (your OpenAI key)</option>
       <option value="cloud">Cloud (InsiderReach)</option>
     </select>
-    <p class="small-note">Cloud AI requires sign-in above. Local AI keeps your key in Chrome storage on this browser.</p>
+    <p class="small-note">Cloud AI requires a Cloud API token (local dev) or sign-in above. Local AI keeps your key in Chrome storage on this browser.</p>
   </div>
 
   <div class="section">

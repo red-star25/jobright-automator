@@ -128,29 +128,77 @@ function aiTextLooksReadable(text) {
   return /(education|experience|project|skills|university|college|software|engineer|developer|intern|github|linkedin|email|coursework|programming|javascript|python|java|react|node|sql)/i.test(sample);
 }
 
+function mapExtensionModeToCloudMode(mode) {
+  return mode === "pro" ? "rewritePro" : "rewrite";
+}
+
+function buildCloudJobContext(job) {
+  const ctx = {
+    responsibilities: job.responsibilities || [],
+    required: job.requiredQualifications || [],
+    preferred: job.preferredQualifications || [],
+    matchedSkills: job.matchedSkills || [],
+  };
+  const hasContext = Object.values(ctx).some((items) => Array.isArray(items) && items.length > 0);
+  return hasContext ? ctx : undefined;
+}
+
+async function getCloudAuthToken(settings) {
+  const devToken = String(settings.cloudApiToken || "").trim();
+  if (devToken) return devToken;
+  return getValidAccessToken();
+}
+
 async function callCloudAiPersonalize(payload, settings) {
-  const accessToken = await getValidAccessToken();
-  if (!accessToken) {
-    return { ok: false, error: "Sign in to InsiderReach Cloud AI in Options > Account.", code: "UNAUTHORIZED" };
+  const token = await getCloudAuthToken(settings);
+  if (!token) {
+    return {
+      ok: false,
+      error: "Add your Cloud API token in Options > Account, or sign in to Cloud AI.",
+      code: "UNAUTHORIZED",
+    };
   }
 
   const apiBase = getApiBase();
-  const body = {
-    mode: payload.mode || "rewrite",
-    channel: payload.channel || "email",
-    tone: payload.tone || settings.defaultTone || "Professional",
-    text: payload.text || "",
-    job: payload.job || {},
-    resumeText: payload.mode === "pro" ? cleanAiText(payload.resumeText || settings.aiResumeText || "") : "",
-    customInstructions: cleanAiText(settings.aiCustomInstructions || payload.customInstructions || ""),
-    userName: settings.userName || payload.userName || "",
-  };
+  const channel = payload.channel || "email";
+  const cloudMode = mapExtensionModeToCloudMode(payload.mode || "rewrite");
+  const job = payload.job || {};
+  const customInstructions = cleanAiText(settings.aiCustomInstructions || payload.customInstructions || "");
+  const resumeText = cloudMode === "rewritePro"
+    ? cleanAiText(payload.resumeText || settings.aiResumeText || "")
+    : "";
 
-  const response = await fetch(`${apiBase}/api/ai/personalize`, {
+  const body = {
+    mode: cloudMode,
+    channel,
+    tone: payload.tone || settings.defaultTone || "Professional",
+    originalMessage: payload.text || "",
+    personName: job.personName || undefined,
+    personTitle: job.personTitle || undefined,
+    company: job.company || undefined,
+    jobTitle: job.jobTitle || undefined,
+    jobContext: buildCloudJobContext(job),
+    resumeText: resumeText || undefined,
+    customInstructions: customInstructions || undefined,
+    maxChars: channel === "linkedin" ? 200 : undefined,
+    extensionVersion: chrome.runtime.getManifest().version,
+  };
+  if (payload.subject) body.subject = payload.subject;
+
+  if (typeof logCloudUsageEvent === "function") {
+    logCloudUsageEvent({
+      eventType: "rewrite_requested",
+      mode: cloudMode,
+      channel,
+      metadata: { cached: false },
+    });
+  }
+
+  const response = await fetch(`${apiBase}/v1/rewrite`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
@@ -162,15 +210,24 @@ async function callCloudAiPersonalize(payload, settings) {
     json = null;
   }
 
-  if (!json) {
-    return { ok: false, error: "Cloud AI request failed." };
+  if (!response.ok) {
+    const error = json?.error || `Cloud AI request failed with status ${response.status}.`;
+    const code = json?.code || (response.status === 401 ? "UNAUTHORIZED" : undefined);
+    if (code === "UNAUTHORIZED" && !String(settings.cloudApiToken || "").trim()) {
+      await clearAuthSession();
+    }
+    return { ok: false, error, code, usage: json?.usage, limits: json?.limits };
   }
 
-  if (!json.ok && json.code === "UNAUTHORIZED") {
-    await clearAuthSession();
+  if (!json?.text) {
+    return { ok: false, error: "Cloud AI returned an empty response." };
   }
 
-  return json;
+  if (typeof fetchCloudMe === "function") {
+    fetchCloudMe().catch(() => {});
+  }
+
+  return { ok: true, text: json.text, proofPoint: json.proofPoint || "", subject: json.subject };
 }
 
 async function callLocalAiPersonalize(payload, settings) {
@@ -425,9 +482,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
 
+  if (message.type === "LOG_CLOUD_USAGE_EVENT") {
+    if (typeof logCloudUsageEvent === "function") {
+      logCloudUsageEvent(message.payload || {}).then(() => sendResponse({ ok: true }));
+    } else {
+      sendResponse({ ok: false });
+    }
+    return true;
+  }
+
   if (message.type === "AI_PERSONALIZE") {
     chrome.storage.local.get([
       "aiProvider",
+      "cloudApiToken",
       "openaiApiKey",
       "defaultTone",
       "userName",
@@ -477,7 +544,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (result.code === "LIMIT_EXCEEDED") {
             result.error = "Monthly limit reached. Upgrade in the dashboard or switch to Local AI in Options.";
           } else if (result.code === "UNAUTHORIZED") {
-            result.error = "Session expired. Sign in again in Options > Account.";
+            result.error = "Invalid or missing Cloud API token. Add it in Options > Account, or sign in again.";
           }
           sendResponse(result);
           return;

@@ -13,7 +13,7 @@ const aiModeHint = document.getElementById("aiModeHint");
 const accountStripText = document.getElementById("accountStripText");
 
 function renderAccountStrip() {
-  chrome.storage.local.get(["aiProvider", "authSession", "cloudUsage"], async (data) => {
+  chrome.storage.local.get(["aiProvider", "authSession", "cloudUsage", "cloudApiToken"], async (data) => {
     const provider = data.aiProvider || "local";
     if (provider !== "cloud") {
       accountStripText.textContent = "Using Local AI. Sign in via Manage resumes > Account for Cloud AI.";
@@ -21,8 +21,9 @@ function renderAccountStrip() {
     }
 
     const session = data.authSession;
-    if (!session || !session.access_token) {
-      accountStripText.textContent = "Cloud AI selected. Sign in from Manage resumes > Account.";
+    const cloudApiToken = String(data.cloudApiToken || "").trim();
+    if (!cloudApiToken && (!session || !session.access_token)) {
+      accountStripText.textContent = "Cloud AI selected. Add a Cloud API token or sign in from Manage resumes > Account.";
       return;
     }
 

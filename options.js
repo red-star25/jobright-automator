@@ -19,6 +19,7 @@ const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const upgradeLink = document.getElementById("upgradeLink");
 const localKeySection = document.getElementById("localKeySection");
+const cloudApiTokenInput = document.getElementById("cloudApiToken");
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -133,15 +134,21 @@ function renderUsageBars(cloudUsage) {
 
 async function refreshAccountUi() {
   const data = await new Promise((resolve) => {
-    chrome.storage.local.get(["authSession", "cloudUsage", "aiProvider"], resolve);
+    chrome.storage.local.get(["authSession", "cloudUsage", "aiProvider", "cloudApiToken"], resolve);
   });
 
   const session = data.authSession;
   const cloudUsage = data.cloudUsage;
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "http://localhost:3000";
-  if (upgradeLink) upgradeLink.href = `${apiBase}/dashboard`;
+  const cloudApiToken = String(data.cloudApiToken || "").trim();
+  const apiBase = typeof getApiBase === "function" ? getApiBase() : "http://localhost:8080";
+  const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "http://localhost:3000";
+  if (upgradeLink) upgradeLink.href = `${webBase}/dashboard`;
 
-  if (session && session.email) {
+  if (cloudApiToken) {
+    accountSummary.textContent = "Using Cloud API token (local dev).";
+    signInBtn.style.display = "inline-block";
+    signOutBtn.style.display = session?.access_token ? "inline-block" : "none";
+  } else if (session && session.email) {
     accountSummary.textContent = `Signed in as ${session.email}`;
     signInBtn.style.display = "none";
     signOutBtn.style.display = "inline-block";
@@ -156,7 +163,8 @@ async function refreshAccountUi() {
     usageSummary.innerHTML = "";
   }
 
-  if (session && session.access_token && typeof fetchCloudMe === "function") {
+  const hasCloudAuth = cloudApiToken || (session && session.access_token);
+  if (hasCloudAuth && typeof fetchCloudMe === "function") {
     const me = await fetchCloudMe();
     if (me) renderUsageBars(me);
     else renderUsageBars(cloudUsage);
@@ -193,6 +201,7 @@ function loadAiSettings() {
     "aiMode",
     "aiProvider",
     "aiRewriteEnabled",
+    "cloudApiToken",
     "openaiApiKey",
     "defaultTone",
     "userName",
@@ -203,6 +212,7 @@ function loadAiSettings() {
     runModeSelect.value = data.runMode || "both";
     aiModeSelect.value = data.aiMode || (data.aiRewriteEnabled === false ? "off" : "ask");
     aiProviderSelect.value = data.aiProvider || "local";
+    if (cloudApiTokenInput) cloudApiTokenInput.value = data.cloudApiToken || "";
     openaiApiKeyInput.value = data.openaiApiKey || "";
     defaultToneSelect.value = data.defaultTone || "Professional";
     userNameInput.value = data.userName || "";
@@ -214,11 +224,16 @@ function loadAiSettings() {
 }
 
 function saveAiSettings() {
+  const cloudToken = cloudApiTokenInput ? cloudApiTokenInput.value.trim() : "";
+  const provider = cloudToken ? "cloud" : aiProviderSelect.value;
+  if (cloudToken) aiProviderSelect.value = "cloud";
+
   chrome.storage.local.set({
     runMode: runModeSelect.value,
     aiMode: aiModeSelect.value,
-    aiProvider: aiProviderSelect.value,
+    aiProvider: provider,
     aiRewriteEnabled: aiModeSelect.value !== "off",
+    cloudApiToken: cloudToken,
     openaiApiKey: openaiApiKeyInput.value.trim(),
     defaultTone: defaultToneSelect.value,
     userName: userNameInput.value.trim(),
@@ -228,8 +243,13 @@ function saveAiSettings() {
   }, () => {
     aiStatus.textContent = "Saved.";
     setTimeout(() => { aiStatus.textContent = ""; }, 1800);
-    updateProviderUi(aiProviderSelect.value);
+    updateProviderUi(provider);
+    refreshAccountUi();
   });
+}
+
+if (cloudApiTokenInput) {
+  cloudApiTokenInput.addEventListener("change", saveAiSettings);
 }
 
 signInBtn.addEventListener("click", async () => {

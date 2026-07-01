@@ -43,8 +43,8 @@ async function refreshAuthSessionIfNeeded() {
   const now = Math.floor(Date.now() / 1000);
   if (expiresAt - now > 300) return session;
 
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
-  const response = await fetch(`${apiBase}/api/auth/refresh`, {
+  const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "";
+  const response = await fetch(`${webBase}/api/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: session.refresh_token }),
@@ -65,18 +65,47 @@ async function refreshAuthSessionIfNeeded() {
   return nextSession;
 }
 
-async function fetchCloudMe() {
+function normalizeCloudMeResponse(json) {
+  if (!json || typeof json !== "object") return null;
+  return {
+    ok: true,
+    email: json.email || "",
+    plan: json.plan || "free",
+    usage: {
+      rewrite: json.usage?.rewrite ?? 0,
+      pro: json.usage?.rewritePro ?? json.usage?.pro ?? 0,
+    },
+    limits: {
+      rewrite: json.limits?.rewrite ?? 0,
+      pro: json.limits?.rewritePro ?? json.limits?.pro ?? 0,
+    },
+    periodStart: json.periodStart,
+  };
+}
+
+async function getCloudAuthToken() {
+  const data = await storageGet(["cloudApiToken", "authSession"]);
+  const devToken = String(data.cloudApiToken || "").trim();
+  if (devToken) return devToken;
   const session = await refreshAuthSessionIfNeeded();
-  if (!session?.access_token) return null;
+  return session?.access_token || null;
+}
+
+async function fetchCloudMe() {
+  const token = await getCloudAuthToken();
+  if (!token) return null;
 
   const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
-  const response = await fetch(`${apiBase}/api/me`, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
+  const response = await fetch(`${apiBase}/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
+  if (!response.ok) return null;
+
   const json = await response.json();
-  if (!json.ok) return null;
-  await storageSet({ cloudUsage: json });
-  return json;
+  const normalized = normalizeCloudMeResponse(json);
+  if (!normalized) return null;
+  await storageSet({ cloudUsage: normalized });
+  return normalized;
 }
 
 function parseAuthHash(url) {
@@ -96,9 +125,9 @@ function parseAuthHash(url) {
 
 async function signInWithCloudAi() {
   return new Promise((resolve, reject) => {
-    const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
+    const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "";
     const redirectUrl = chrome.identity.getRedirectURL("auth");
-    const startUrl = `${apiBase}/auth/extension-start?redirect=${encodeURIComponent(redirectUrl)}`;
+    const startUrl = `${webBase}/auth/extension-start?redirect=${encodeURIComponent(redirectUrl)}`;
 
     chrome.identity.launchWebAuthFlow({ url: startUrl, interactive: true }, async (callbackUrl) => {
       if (chrome.runtime.lastError) {
@@ -134,4 +163,30 @@ async function signOutCloudAi() {
 async function getValidAccessToken() {
   const session = await refreshAuthSessionIfNeeded();
   return session?.access_token || null;
+}
+
+async function logCloudUsageEvent(payload) {
+  const token = await getCloudAuthToken();
+  if (!token) return;
+
+  const mode = payload.mode === "pro" || payload.mode === "rewritePro" ? "rewritePro" : "rewrite";
+  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
+  try {
+    await fetch(`${apiBase}/v1/usage/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        eventType: payload.eventType,
+        mode,
+        channel: payload.channel,
+        extensionVersion: chrome.runtime.getManifest().version,
+        metadata: payload.metadata || {},
+      }),
+    });
+  } catch (_) {
+    // Non-blocking telemetry.
+  }
 }
