@@ -9,42 +9,22 @@
       margin: 30px auto;
       color: #1a1a1a;
     }
-    h1 { font-size: 18px; }
-    .row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border: 1px solid #e0e0e0;
-      border-radius: 6px;
-      padding: 8px 10px;
-      margin-bottom: 8px;
-    }
-    .row span.name { font-size: 13px; }
-    .row .actions button {
-      margin-left: 6px;
-      font-size: 12px;
-      padding: 4px 8px;
-      cursor: pointer;
-    }
-    .default-tag {
-      font-size: 11px;
-      color: #2fa86f;
-      font-weight: 600;
-      margin-left: 6px;
-    }
-    input[type="file"] { margin: 14px 0; }
-    .section {
-      border-top: 1px solid #eee;
-      margin-top: 22px;
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    h2 {
+      font-size: 14px;
+      margin: 22px 0 8px;
       padding-top: 18px;
+      border-top: 1px solid #eee;
     }
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+    input[type="file"] { margin: 10px 0; }
     label {
       display: block;
       font-size: 12px;
       font-weight: 600;
       margin: 12px 0 5px;
     }
-    input[type="password"], input[type="text"], select, textarea {
+    input[type="text"], select, textarea {
       width: 100%;
       box-sizing: border-box;
       border: 1px solid #d9d9d9;
@@ -53,19 +33,28 @@
       font: inherit;
       font-size: 13px;
     }
-    textarea { min-height: 130px; resize: vertical; }
+    textarea { min-height: 110px; resize: vertical; }
     .save-row { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
-    .save-row button { padding: 7px 12px; border-radius: 6px; border: 1px solid #ccc; background: #2fa86f; color: white; cursor: pointer; }
-    .small-note { font-size: 12px; color: #666; line-height: 1.4; }
+    .save-row button { padding: 7px 12px; border-radius: 6px; border: none; background: #2fa86f; color: white; cursor: pointer; }
+    .small-note { font-size: 12px; color: #666; line-height: 1.4; margin: 6px 0 0; }
     #aiStatus { font-size: 12px; color: #2fa86f; }
-    .check-row { display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:13px; }
-    .check-row input { width:auto; }
     .account-box {
       border: 1px solid #d8f2e5;
       background: #f7fffb;
       border-radius: 8px;
       padding: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 4px;
+    }
+    .pro-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #2fa86f;
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      vertical-align: middle;
     }
     .usage-bar {
       height: 8px;
@@ -96,112 +85,70 @@
       color: white;
       border: none;
     }
-    #accountStatus, #localKeySection { margin-top: 8px; }
+    #accountStatus { margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h1>Manage resumes</h1>
-  <p style="font-size:13px; color:#555;">
-    Upload the PDF resumes you want attached when running the autopilot. For Rewrite Pro, clean resume text is needed too.
-    Set one as default, it will be pre-selected in the popup unless you change it.
-  </p>
+  <h1>InsiderReach Settings</h1>
+
+  <h2>Resumes</h2>
+  <p class="small-note">Upload PDF resumes to attach when sending email outreach.</p>
   <input type="file" id="fileInput" accept="application/pdf,.pdf,text/plain,.txt,.md" multiple />
   <p id="uploadStatus" class="small-note"></p>
 
-  <div class="section">
-    <h1>Account</h1>
-    <p class="small-note">
-      <strong>Extension sign-in is separate from the web dashboard.</strong>
-      Signing in at localhost or the Web dashboard link does not connect the extension automatically.
-      Click <strong>Sign in to Cloud AI</strong> below and finish sign-in in the popup (do not close it early).
-    </p>
-    <div class="account-box">
-      <div id="accountSummary">Not signed in.</div>
-      <div id="usageSummary"></div>
-      <div class="btn-row">
-        <button type="button" id="signInBtn" class="primary-btn">Sign in to Cloud AI</button>
-        <button type="button" id="signOutBtn">Sign out</button>
-        <button type="button" id="upgradeBtn" class="primary-btn">Upgrade to Pro</button>
-        <a id="upgradeLink" class="button-link" href="#" target="_blank" rel="noopener">Web dashboard</a>
-      </div>
-      <p id="accountStatus" class="small-note"></p>
+  <h2>Account</h2>
+  <div class="account-box">
+    <div id="accountSummary">Not signed in.</div>
+    <div id="usageSummary"></div>
+    <div class="btn-row">
+      <button type="button" id="signInBtn" class="primary-btn">Sign in</button>
+      <button type="button" id="signOutBtn">Sign out</button>
+      <button type="button" id="upgradeBtn" class="primary-btn">Upgrade to Pro</button>
+      <a id="manageLink" class="button-link" href="#" target="_blank" rel="noopener">Manage account</a>
     </div>
-
-    <label for="aiProvider">AI provider</label>
-    <select id="aiProvider">
-      <option value="cloud">Cloud (InsiderReach) — recommended</option>
-      <option value="local">Local (your OpenAI key)</option>
-    </select>
-    <p class="small-note">
-      <strong>Cloud:</strong> InsiderReach runs AI for you with monthly Rewrite limits. Sign in above (or use a dev token while testing).
-      <strong>Local:</strong> You paste your own OpenAI key; requests go to OpenAI directly and bypass InsiderReach billing/limits.
-    </p>
-
-    <details style="margin-top:12px;">
-      <summary class="small-note" style="cursor:pointer;font-weight:600;">Advanced: Cloud API token (developers only)</summary>
-      <p class="small-note" style="margin-top:8px;">
-        For local backend testing only. Paste <code>DEV_AUTH_TOKEN</code> from <code>cloud-api/.env</code> or Railway, click Save AI settings, and choose Cloud.
-        Normal users should use <strong>Sign in to Cloud AI</strong> instead — leave this blank.
-      </p>
-      <label for="cloudApiToken">Cloud API token</label>
-      <input type="password" id="cloudApiToken" placeholder="Leave blank unless developing locally" autocomplete="off" />
-    </details>
+    <p id="accountStatus" class="small-note"></p>
   </div>
 
-  <div class="section">
-    <h1>AI Settings</h1>
+  <h2>Outreach defaults</h2>
+  <label for="runMode">Run mode</label>
+  <select id="runMode">
+    <option value="both">Email + LinkedIn</option>
+    <option value="email_only">Email only</option>
+    <option value="linkedin_only">LinkedIn only</option>
+  </select>
 
-    <label for="runMode">Default run mode</label>
-    <select id="runMode">
-      <option value="both">Email + LinkedIn</option>
-      <option value="email_only">Email only</option>
-      <option value="linkedin_only">LinkedIn only</option>
-    </select>
+  <label for="aiMode">AI Rewrite</label>
+  <select id="aiMode">
+    <option value="off">Off — use Jobright original</option>
+    <option value="ask">Ask every time</option>
+    <option value="auto_rewrite">Auto Rewrite</option>
+    <option value="auto_pro">Auto Rewrite Pro</option>
+  </select>
 
-    <label for="aiMode">AI Rewrite mode</label>
-    <select id="aiMode">
-      <option value="off">Off - use Jobright original</option>
-      <option value="ask">Ask every time</option>
-      <option value="auto_rewrite">Auto Rewrite, then preview</option>
-      <option value="auto_pro">Auto Rewrite Pro, then preview</option>
-    </select>
-    <p class="small-note">Use Off when you want InsiderReach to keep the automation moving with Jobright's original message.</p>
+  <label for="defaultTone">Default tone</label>
+  <select id="defaultTone">
+    <option>Professional</option>
+    <option>Friendly</option>
+    <option>Concise</option>
+    <option>Confident</option>
+    <option>Warm referral ask</option>
+    <option>Student/new grad</option>
+    <option>Recruiter-style</option>
+  </select>
 
-    <div id="localKeySection">
-      <p class="small-note">Local mode: your OpenAI API key is stored in Chrome local storage on this browser. Use this for personal testing only.</p>
-      <label for="openaiApiKey">OpenAI API key</label>
-      <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
-    </div>
+  <label for="userName">Your name</label>
+  <input type="text" id="userName" placeholder="Used in message signatures" />
 
-    <label for="defaultTone">Default tone</label>
-    <select id="defaultTone">
-      <option>Professional</option>
-      <option>Friendly</option>
-      <option>Concise</option>
-      <option>Confident</option>
-      <option>Warm referral ask</option>
-      <option>Student/new grad</option>
-      <option>Recruiter-style</option>
-    </select>
+  <label for="customInstructions">Custom AI instructions</label>
+  <textarea id="customInstructions" placeholder="Optional. Example: Mention I'm a CS Master's student. Keep the ask low-pressure."></textarea>
 
-    <label for="userName">Your name / signature</label>
-    <input type="text" id="userName" placeholder="Dhruv" />
+  <label for="resumeText">Resume text for Rewrite Pro</label>
+  <textarea id="resumeText" placeholder="Paste resume text here for better Rewrite Pro results."></textarea>
+  <p class="small-note">If PDF upload doesn't extract cleanly, paste your resume text here.</p>
 
-    <label for="customInstructions">Custom AI instructions</label>
-    <textarea id="customInstructions" placeholder="Optional. Example: Always mention that I am a CS Master's student at CSU Fullerton. Never mention GPA. Keep the ask low-pressure."></textarea>
-    <p class="small-note">These instructions are added to both Rewrite and Rewrite Pro, but the AI is still told not to invent facts.</p>
-
-    <label for="resumeText">Resume text for Rewrite Pro</label>
-    <textarea id="resumeText" placeholder="This auto-fills when PDF text extraction works. You can also paste your resume text here for better Rewrite Pro results."></textarea>
-    <p class="small-note"><strong>Important:</strong> many PDFs store text in compressed/font-encoded form, so browser-only extraction can produce unreadable symbols. If this box has gibberish, paste your clean resume text manually here, or upload a .txt version of your resume. Rewrite Pro will now refuse to run if this text is missing or unreadable.</p>
-
-    <label class="check-row"><input type="checkbox" id="debugLogging" /> Enable debug console logs</label>
-    <p class="small-note">Keep this off for normal runs. Turn it on only when troubleshooting; status updates still appear in the popup either way.</p>
-
-    <div class="save-row">
-      <button id="saveAiBtn">Save AI settings</button>
-      <span id="aiStatus"></span>
-    </div>
+  <div class="save-row">
+    <button id="saveAiBtn">Save settings</button>
+    <span id="aiStatus"></span>
   </div>
 
   <script src="config.js"></script>

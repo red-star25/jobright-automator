@@ -9,24 +9,74 @@
 // (light DOM, shadow roots, and starting from <html> not just <body>) to
 // deal with that.
 
-let debugLoggingEnabled = false;
-
-function debugLog(...args) {
-  if (debugLoggingEnabled) console.log(...args);
+function log(...args) {
+  console.log("[InsiderReach]", ...args);
 }
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function waitFor(check, { timeout = 8000, interval = 300 } = {}) {
+let domSnapshot = null;
+
+function refreshDomSnapshot() {
+  domSnapshot = null;
+}
+
+// Waits until `check()` returns a truthy value. Uses MutationObserver so
+// automation reacts as soon as LinkedIn renders the next dialog step.
+async function waitFor(check, { timeout = 8000, interval = 200, root = document.documentElement || document } = {}) {
+  refreshDomSnapshot();
+  const immediate = check();
+  if (immediate) return immediate;
+
+  return new Promise((resolve) => {
+    let done = false;
+    let observer = null;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      if (observer) observer.disconnect();
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      resolve(value || null);
+    };
+
+    const test = () => {
+      try {
+        refreshDomSnapshot();
+        const result = check();
+        if (result) finish(result);
+      } catch (err) {
+        log("waitFor check failed", err?.message || String(err));
+      }
+    };
+
+    if (root) {
+      observer = new MutationObserver(test);
+      observer.observe(root, { childList: true, subtree: true, attributes: true });
+    }
+    pollTimer = setInterval(test, interval);
+    timeoutTimer = setTimeout(() => finish(null), timeout);
+  });
+}
+
+async function waitForAutomationReady(job) {
+  if (job.automationReady !== false) return job;
+
   const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const result = check();
-    if (result) return result;
-    await sleep(interval);
+  while (Date.now() - start < 120000) {
+    const data = await new Promise((resolve) => chrome.storage.local.get(["pendingLinkedinJob"], resolve));
+    const pending = data.pendingLinkedinJob;
+    if (pending && pending.runId === job.runId && pending.automationReady !== false) {
+      return { ...job, ...pending };
+    }
+    await sleep(150);
   }
-  return null;
+  return job;
 }
 
 function visibleText(el) {
@@ -48,7 +98,9 @@ function getAllElementsDeep(root) {
 }
 
 function deepAll() {
-  return getAllElementsDeep(document.documentElement || document);
+  if (domSnapshot) return domSnapshot;
+  domSnapshot = getAllElementsDeep(document.documentElement || document);
+  return domSnapshot;
 }
 
 function isClickable(el) {
@@ -79,11 +131,95 @@ function findByAriaLabel(label) {
   return null;
 }
 
-function findTextareaDeep() {
-  const all = deepAll();
-  return all.find((el) => el.tagName === "TEXTAREA" && el.id === "custom-message") ||
-    all.find((el) => el.tagName === "TEXTAREA") ||
+function findTextareaDeep(root) {
+  const scope = root ? getAllElementsDeep(root) : deepAll();
+  return scope.find((el) => el.tagName === "TEXTAREA" && el.id === "custom-message") ||
+    scope.find((el) => el.tagName === "TEXTAREA") ||
     null;
+}
+
+function findByAriaLabelInRoot(label, root) {
+  const scope = root ? getAllElementsDeep(root) : deepAll();
+  for (const el of scope) {
+    if ((el.getAttribute("aria-label") || "") === label) return el;
+  }
+  return null;
+}
+
+function findButtonByTextInRoot(text, root, options = {}) {
+  const scope = root ? getAllElementsDeep(root) : deepAll();
+  for (const el of scope) {
+    if (!isClickable(el)) continue;
+    if (options.excludeRecommendations && isInsideRecommendationRail(el)) continue;
+    if (visibleText(el).toLowerCase() === text.toLowerCase()) return el;
+  }
+  return null;
+}
+
+function isLinkedInPageLoading() {
+  if (document.readyState === "loading") return true;
+
+  const loader = document.querySelector(".artdeco-loader, .artdeco-loading, [data-test-loader]");
+  if (loader && isElementVisible(loader)) return true;
+
+  const main = document.querySelector("main");
+  if (main && main.getAttribute("aria-busy") === "true") return true;
+
+  // LinkedIn often paints action buttons before the profile name is stable.
+  const hasProfileChrome = !!getTopCardRoot() && !!findProfileNameElement();
+  const hasActions = !!findConnectControl() || !!findProfileMoreButton() || !!findAlreadyHandledSignal();
+  if (!hasProfileChrome && !hasActions) return true;
+
+  return false;
+}
+
+function isOnExpectedProfile(job) {
+  if (!job || !job.profileUrl || !/\/in\//i.test(job.profileUrl)) return true;
+  const expectedMatch = job.profileUrl.match(/\/in\/([^/?#]+)/i);
+  const currentSlug = currentLinkedInSlug();
+  if (!expectedMatch || !currentSlug) return true;
+  return expectedMatch[1].toLowerCase() === currentSlug;
+}
+
+function findVisibleInviteModal() {
+  refreshDomSnapshot();
+  const modals = deepAll().filter((el) =>
+    el.classList &&
+    el.classList.contains("artdeco-modal") &&
+    isElementVisible(el)
+  );
+  return modals.find((modal) => {
+    const text = visibleText(modal).toLowerCase();
+    return /add a note|send without a note|personalize your invitation|invitation/i.test(text) ||
+      !!findTextareaDeep(modal);
+  }) || modals[0] || null;
+}
+
+function isProfilePageReady(expectedName = "", job = null) {
+  if (!/\/in\//i.test(location.pathname)) return false;
+  if (job && !isOnExpectedProfile(job)) return false;
+  if (isLinkedInPageLoading()) return false;
+
+  const profileName = inferProfileName();
+  if (!profileName && !findProfileNameElement()) return false;
+
+  const resolvedName = expectedName || profileName || "";
+  const connect = findConnectControl(resolvedName);
+  const more = findProfileMoreButton();
+  const handled = findAlreadyHandledSignal();
+  return !!(connect || more || handled);
+}
+
+function inviteDialogReady() {
+  const modal = findVisibleInviteModal();
+  if (!modal) return false;
+  return !!(
+    findTextareaDeep(modal) ||
+    findByAriaLabelInRoot("Add a note", modal) ||
+    findButtonByTextInRoot("Add a note", modal) ||
+    findByAriaLabelInRoot("Send without a note", modal) ||
+    findButtonByTextInRoot("Send without a note", modal)
+  );
 }
 
 function cleanPersonName(name) {
@@ -336,7 +472,7 @@ function isValidConnectCandidate(el, expectedName) {
   if (!looksConnect) return false;
   const inviteName = parseInviteNameFromAria(el);
   if (inviteName && expectedName && !namesLikelyMatch(inviteName, expectedName)) {
-    debugLog("[InsiderReach] ignoring Connect button for a different profile", { expectedName, inviteName });
+    log("ignoring Connect button for a different profile", { expectedName, inviteName });
     return false;
   }
   return true;
@@ -427,6 +563,7 @@ function finishLinkedinStep(reason = "done") {
 }
 
 function fireClick(el) {
+  refreshDomSnapshot();
   try {
     el.scrollIntoView({ block: "center" });
   } catch (e) {}
@@ -440,6 +577,7 @@ function fireClick(el) {
   } catch (e) {}
   el.dispatchEvent(new MouseEvent("mouseup", opts));
   el.click();
+  refreshDomSnapshot();
 }
 
 function setFrameworkValue(el, value) {
@@ -449,15 +587,18 @@ function setFrameworkValue(el, value) {
 }
 
 async function run() {
-  const settings = await new Promise((resolve) => chrome.storage.local.get(["debugLogging"], resolve));
-  debugLoggingEnabled = !!settings.debugLogging;
-  debugLog("[InsiderReach] LinkedIn script started, checking for a pending job...");
-  const job = await new Promise((resolve) => {
+  log("LinkedIn script started, checking for a pending job...");
+  let job = await new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "GET_PENDING_LINKEDIN_JOB" }, resolve);
   });
   if (!job || !job.note) {
-    debugLog("[InsiderReach] no pending LinkedIn job found for this page, doing nothing.");
+    log("no pending LinkedIn job found for this page.");
     return;
+  }
+
+  if (job.automationReady === false) {
+    log("profile pre-loaded, waiting for note review to finish...");
+    job = await waitForAutomationReady(job);
   }
 
   // Jobright row scraping can sometimes pass "Unknown". Prefer the LinkedIn
@@ -468,38 +609,48 @@ async function run() {
   if (earlyName) job.personName = earlyName;
   savePendingLinkedinJob(job);
 
-  const log = (text) => {
-    debugLog("[InsiderReach]", `${job.personName}: ${text}`);
-    chrome.runtime.sendMessage({ type: "LOG_STATUS", text: `${job.personName}: ${text}` });
-  };
+  const logStep = (text) => log(`${job.personName}: ${text}`);
 
-  log("looking for the Connect button...");
-  let connectEl = await waitFor(() => findConnectControl(job.personName || inferProfileName()), { timeout: 6000 });
-  log(connectEl ? "found Connect directly." : "did not find Connect directly, checking the More menu...");
+  logStep("waiting for the profile page to finish loading...");
+  const profileReady = await waitFor(
+    () => isProfilePageReady(job.personName || inferProfileName(), job),
+    { timeout: 25000 }
+  );
+  if (!profileReady) {
+    logStep("profile page did not finish loading in time. Closing and moving on.");
+    savePendingLinkedinJob(job);
+    setTimeout(() => finishLinkedinStep("profile-not-ready"), 600);
+    return;
+  }
+
+  logStep("profile loaded, looking for the Connect button...");
+  let connectEl = findConnectControl(job.personName || inferProfileName());
+  logStep(connectEl ? "found Connect directly." : "did not find Connect directly, checking the More menu...");
 
   if (!connectEl) {
     const moreBtn = await waitFor(findProfileMoreButton, { timeout: 4000 });
-    log(moreBtn ? "found the More button, opening it." : "could not find a More button either.");
+    logStep(moreBtn ? "found the More button, opening it." : "could not find a More button either.");
     if (moreBtn) {
-      await sleep(600);
       fireClick(moreBtn);
-      await sleep(600);
-      connectEl = await waitFor(() => findConnectInOpenMenu(job.personName || inferProfileName()) || findConnectControl(job.personName || inferProfileName()), { timeout: 5000 });
-      log(connectEl ? "found Connect inside the More menu." : "still no Connect option inside the More menu.");
+      connectEl = await waitFor(
+        () => findConnectInOpenMenu(job.personName || inferProfileName()) || findConnectControl(job.personName || inferProfileName()),
+        { timeout: 5000 }
+      );
+      logStep(connectEl ? "found Connect inside the More menu." : "still no Connect option inside the More menu.");
     }
   }
 
   if (!connectEl) {
     const state = findAlreadyHandledSignal();
     if (state) {
-      log(`no Connect button found; profile looks already handled (${state}). Closing and moving on.`);
+      logStep(`no Connect button found; profile looks already handled (${state}). Closing and moving on.`);
       savePendingLinkedinJob(job);
-      setTimeout(() => finishLinkedinStep("already-handled"), 800);
+      setTimeout(() => finishLinkedinStep("already-handled"), 400);
       return;
     }
-    log("could not find the Connect button on this profile. Closing and moving on so the run does not get stuck.");
+    logStep("could not find the Connect button on this profile. Closing and moving on so the run does not get stuck.");
     savePendingLinkedinJob(job);
-    setTimeout(() => finishLinkedinStep("connect-not-found"), 1200);
+    setTimeout(() => finishLinkedinStep("connect-not-found"), 600);
     return;
   }
 
@@ -507,76 +658,114 @@ async function run() {
   if (nameFromConnect && (!job.personName || /^unknown$/i.test(job.personName))) {
     job.personName = nameFromConnect;
     savePendingLinkedinJob(job);
-    log(`using LinkedIn profile name: ${nameFromConnect}`);
+    logStep(`using LinkedIn profile name: ${nameFromConnect}`);
   }
 
-  await sleep(600);
   fireClick(connectEl);
-  log("clicked Connect, waiting for the dialog...");
-  await sleep(1200);
+  logStep("clicked Connect, waiting for the invite dialog...");
+  const inviteModal = await waitFor(inviteDialogReady, { timeout: 12000 });
+  if (!inviteModal) {
+    logStep("invite dialog did not open after clicking Connect. Closing and moving on.");
+    savePendingLinkedinJob(job);
+    setTimeout(() => finishLinkedinStep("invite-dialog-timeout"), 600);
+    return;
+  }
+
+  const modalRoot = findVisibleInviteModal();
 
   const expectedBeforeModal = job.personName || nameFromConnect || earlyName || "";
   const nameFromInviteModal = inferProfileName();
   if (nameFromInviteModal && expectedBeforeModal && !namesLikelyMatch(nameFromInviteModal, expectedBeforeModal)) {
-    log(`invite dialog is for ${nameFromInviteModal}, but expected ${expectedBeforeModal}. Closing this wrong dialog and moving on.`);
+    logStep(`invite dialog is for ${nameFromInviteModal}, but expected ${expectedBeforeModal}. Closing this wrong dialog and moving on.`);
     const closeBtn = findByAriaLabel("Dismiss") || findByAriaLabel("Close") || findButtonByText("Cancel");
     if (closeBtn) fireClick(closeBtn);
     savePendingLinkedinJob(job);
-    setTimeout(() => finishLinkedinStep("wrong-profile-dialog"), 800);
+    setTimeout(() => finishLinkedinStep("wrong-profile-dialog"), 400);
     return;
   }
   if (nameFromInviteModal && (!job.personName || /^unknown$/i.test(job.personName) || job.personName !== nameFromInviteModal)) {
     job.personName = nameFromInviteModal;
     savePendingLinkedinJob(job);
-    log(`confirmed LinkedIn name: ${nameFromInviteModal}`);
+    logStep(`confirmed LinkedIn name: ${nameFromInviteModal}`);
   }
 
-  await sleep(600);
-  const addNoteBtn = await waitFor(
-    () => findByAriaLabel("Add a note") || findButtonByText("Add a note"),
-    { timeout: 6000 }
-  );
-  log(addNoteBtn ? "found Add a note, clicking it." : "no Add a note button showed up, maybe it skipped straight to the note box.");
-  if (addNoteBtn) {
-    await sleep(600);
-    fireClick(addNoteBtn);
-    await sleep(800);
-  }
-
-  await sleep(600);
-  const textarea = await waitFor(findTextareaDeep, { timeout: 5000 });
-  log(textarea ? "found the note box." : "no note box appeared.");
+  let textarea = modalRoot ? findTextareaDeep(modalRoot) : findTextareaDeep();
   if (!textarea) {
+    const addNoteBtn = modalRoot
+      ? (findByAriaLabelInRoot("Add a note", modalRoot) || findButtonByTextInRoot("Add a note", modalRoot))
+      : (findByAriaLabel("Add a note") || findButtonByText("Add a note"));
+    logStep(addNoteBtn ? "found Add a note, clicking it." : "no Add a note button showed up, maybe it skipped straight to the note box.");
+    if (addNoteBtn) {
+      fireClick(addNoteBtn);
+      textarea = await waitFor(
+        () => (modalRoot ? findTextareaDeep(findVisibleInviteModal() || modalRoot) : findTextareaDeep()),
+        { timeout: 8000 }
+      );
+      if (!textarea) {
+        logStep("note box did not appear after Add a note, retrying once...");
+        fireClick(addNoteBtn);
+        textarea = await waitFor(
+          () => (modalRoot ? findTextareaDeep(findVisibleInviteModal() || modalRoot) : findTextareaDeep()),
+          { timeout: 8000 }
+        );
+      }
+    }
+  } else {
+    logStep("note box already visible, skipping Add a note.");
+  }
+
+  logStep(textarea ? "found the note box." : "no note box appeared.");
+  if (!textarea) {
+    refreshDomSnapshot();
     const total = deepAll().length;
-    log(`connect dialog opened but no note box appeared (scanned ${total} elements total), add the note manually and send.`);
+    logStep(`connect dialog opened but no note box appeared (scanned ${total} elements total). Closing and moving on.`);
+    savePendingLinkedinJob(job);
+    setTimeout(() => finishLinkedinStep("note-box-timeout"), 600);
     return;
   }
 
-  await sleep(600);
   setFrameworkValue(textarea, job.note);
-  await sleep(600);
-  log("note pasted in, review it and click Send, this tab will close on its own a couple seconds after you do.");
+  logStep("note pasted in, review it and click Send, this tab will close on its own a couple seconds after you do.");
   watchForSend();
 }
 
-function watchForSend() {
-  const interval = setInterval(() => {
-    const all = deepAll();
-    const dialogGone = !all.some((el) => el.id === "custom-message") &&
-      !all.some((el) => el.classList && el.classList.contains("artdeco-modal"));
-    const sentToast = all.some((el) => /invitation sent|invite sent/i.test(el.textContent || ""));
-    if (dialogGone || sentToast) {
-      clearInterval(interval);
-      setTimeout(() => {
-        finishLinkedinStep("sent");
-      }, 1500);
-    }
-  }, 500);
-
-  setTimeout(() => {
-    clearInterval(interval);
-    finishLinkedinStep("sent");
-  }, 5 * 60 * 1000);
+function isSendComplete() {
+  refreshDomSnapshot();
+  const all = deepAll();
+  const dialogGone = !all.some((el) => el.id === "custom-message") &&
+    !all.some((el) => el.classList && el.classList.contains("artdeco-modal"));
+  const sentToast = all.some((el) => /invitation sent|invite sent/i.test(el.textContent || ""));
+  return dialogGone || sentToast;
 }
 
-setTimeout(run, 1200);
+function watchForSend() {
+  if (isSendComplete()) {
+    setTimeout(() => finishLinkedinStep("sent"), 800);
+    return;
+  }
+
+  let observer = null;
+  let pollTimer = null;
+  let timeoutTimer = null;
+  let finished = false;
+
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (observer) observer.disconnect();
+    if (pollTimer) clearInterval(pollTimer);
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    setTimeout(() => finishLinkedinStep("sent"), 800);
+  };
+
+  const test = () => {
+    if (isSendComplete()) finish();
+  };
+
+  observer = new MutationObserver(test);
+  observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true });
+  pollTimer = setInterval(test, 250);
+  timeoutTimer = setTimeout(finish, 5 * 60 * 1000);
+}
+
+run();

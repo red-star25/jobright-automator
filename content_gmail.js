@@ -101,16 +101,15 @@ async function run() {
   let composeRoot = await waitFor(findComposeBody, { timeout: 10000 });
 
   if (!resume) {
-    chrome.runtime.sendMessage({ type: "LOG_STATUS", text: `${job.personName}: resume not found in storage, attach manually.` });
+    console.log(`[InsiderReach] ${job.personName}: resume not found in storage, attach manually.`);
   } else if (composeRoot) {
     const file = dataUrlToFile(resume.dataUrl, resume.name);
     const ok = await attachResume(file);
-    chrome.runtime.sendMessage({
-      type: "LOG_STATUS",
-      text: ok
-        ? `${job.personName}: resume "${resume.name}" attached. Review and hit Send, this tab will close on its own a second after you do.`
-        : `${job.personName}: could not auto-attach, please attach "${resume.name}" manually, then hit Send.`,
-    });
+    console.log(
+      ok
+        ? `[InsiderReach] ${job.personName}: resume "${resume.name}" attached. Review and hit Send.`
+        : `[InsiderReach] ${job.personName}: could not auto-attach "${resume.name}", attach manually then hit Send.`
+    );
   }
 
   watchForSend();

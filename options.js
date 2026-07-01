@@ -3,24 +3,19 @@ const fileInput = document.getElementById("fileInput");
 const uploadStatus = document.getElementById("uploadStatus");
 const runModeSelect = document.getElementById("runMode");
 const aiModeSelect = document.getElementById("aiMode");
-const aiProviderSelect = document.getElementById("aiProvider");
-const openaiApiKeyInput = document.getElementById("openaiApiKey");
 const defaultToneSelect = document.getElementById("defaultTone");
 const userNameInput = document.getElementById("userName");
 const resumeTextInput = document.getElementById("resumeText");
 const customInstructionsInput = document.getElementById("customInstructions");
 const saveAiBtn = document.getElementById("saveAiBtn");
-const debugLoggingInput = document.getElementById("debugLogging");
 const aiStatus = document.getElementById("aiStatus");
 const accountSummary = document.getElementById("accountSummary");
 const usageSummary = document.getElementById("usageSummary");
 const accountStatus = document.getElementById("accountStatus");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
-const upgradeLink = document.getElementById("upgradeLink");
+const upgradeLink = document.getElementById("manageLink");
 const upgradeBtn = document.getElementById("upgradeBtn");
-const localKeySection = document.getElementById("localKeySection");
-const cloudApiTokenInput = document.getElementById("cloudApiToken");
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -37,6 +32,15 @@ function readFileAsArrayBuffer(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
+  });
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsText(file);
   });
 }
 
@@ -66,11 +70,9 @@ function resumeTextLooksReadable(text) {
   if (englishWords.length < 45) return false;
 
   const readableChars = sample.match(/[A-Za-z0-9\s.,;:()@/+&_'’\-#]/g) || [];
-  const readableRatio = readableChars.length / sample.length;
-  if (readableRatio < 0.82) return false;
+  if (readableChars.length / sample.length < 0.82) return false;
 
-  const resumeSignals = /(education|experience|project|skills|university|college|software|engineer|developer|intern|github|linkedin|email|coursework|programming|javascript|python|java|react|node|sql)/i;
-  return resumeSignals.test(sample);
+  return /(education|experience|project|skills|university|college|software|engineer|developer|intern|github|linkedin|email|coursework|programming|javascript|python|java|react|node|sql)/i.test(sample);
 }
 
 function bestEffortExtractPdfText(arrayBuffer) {
@@ -79,7 +81,6 @@ function bestEffortExtractPdfText(arrayBuffer) {
   for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
 
   const chunks = [];
-
   const literalRe = /\((?:\\.|[^\\()]){2,}\)/g;
   let match;
   while ((match = literalRe.exec(raw))) {
@@ -104,27 +105,19 @@ function bestEffortExtractPdfText(arrayBuffer) {
   return resumeTextLooksReadable(extracted) ? extracted : "";
 }
 
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = reject;
-    reader.readAsText(file);
-  });
-}
-
 function renderUsageBars(cloudUsage) {
-  if (!usageSummary) return;
-  if (!cloudUsage || !cloudUsage.limits) {
-    usageSummary.innerHTML = "";
+  if (!usageSummary || !cloudUsage?.limits) {
+    if (usageSummary) usageSummary.innerHTML = "";
     return;
   }
+
   const rewritePct = cloudUsage.limits.rewrite
     ? Math.min(100, Math.round((cloudUsage.usage.rewrite / cloudUsage.limits.rewrite) * 100))
     : 0;
   const proPct = cloudUsage.limits.pro
     ? Math.min(100, Math.round((cloudUsage.usage.pro / cloudUsage.limits.pro) * 100))
     : 0;
+
   usageSummary.innerHTML = `
     <p class="small-note" style="margin-top:10px;"><strong>Rewrite:</strong> ${cloudUsage.usage.rewrite}/${cloudUsage.limits.rewrite}</p>
     <div class="usage-bar"><span style="width:${rewritePct}%"></span></div>
@@ -133,56 +126,41 @@ function renderUsageBars(cloudUsage) {
   `;
 }
 
+function updateBillingUi(plan) {
+  const isPro = isProPlan(plan);
+  if (upgradeBtn) upgradeBtn.style.display = isPro ? "none" : "inline-block";
+  if (upgradeLink) upgradeLink.style.display = isPro ? "inline-block" : "none";
+  return isPro;
+}
+
 async function refreshAccountUi() {
-  const data = await new Promise((resolve) => {
-    chrome.storage.local.get(["authSession", "cloudUsage", "aiProvider", "cloudApiToken"], resolve);
-  });
-
+  const data = await storageGet(["authSession", "cloudUsage"]);
   const session = data.authSession;
-  const cloudUsage = data.cloudUsage;
-  const cloudApiToken = String(data.cloudApiToken || "").trim();
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "http://localhost:8080";
-  const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "http://localhost:3000";
-  if (upgradeLink) upgradeLink.href = `${webBase}/dashboard`;
+  if (upgradeLink) upgradeLink.href = `${getWebAppBase()}/dashboard`;
 
-  if (cloudApiToken) {
-    accountSummary.textContent = "Using Cloud API token (local dev).";
-    signInBtn.style.display = "inline-block";
-    signOutBtn.style.display = session?.access_token ? "inline-block" : "none";
-  } else if (session && session.email) {
-    accountSummary.textContent = `Signed in as ${session.email}`;
-    signInBtn.style.display = "none";
-    signOutBtn.style.display = "inline-block";
-  } else if (session && session.access_token) {
-    accountSummary.textContent = "Signed in to Cloud AI.";
-    signInBtn.style.display = "none";
-    signOutBtn.style.display = "inline-block";
-  } else {
+  if (!session?.access_token) {
     accountSummary.textContent = "Not signed in.";
     signInBtn.style.display = "inline-block";
     signOutBtn.style.display = "none";
     usageSummary.innerHTML = "";
+    if (upgradeBtn) upgradeBtn.style.display = "none";
+    if (upgradeLink) upgradeLink.style.display = "none";
+    return;
   }
 
-  const hasCloudAuth = cloudApiToken || (session && session.access_token);
-  if (hasCloudAuth && typeof fetchCloudMe === "function") {
-    const me = await fetchCloudMe();
-    if (me) renderUsageBars(me);
-    else renderUsageBars(cloudUsage);
-  } else {
-    renderUsageBars(cloudUsage);
-  }
+  const me = (await fetchCloudMe()) || data.cloudUsage;
+  const plan = me?.plan || "free";
+  const email = session.email || me?.email || "";
+  renderUsageBars(me);
 
-  updateProviderUi(data.aiProvider || "local");
+  const proBadge = isProPlan(plan) ? '<span class="pro-badge">Pro</span>' : "";
+  accountSummary.innerHTML = email ? `Signed in as ${email}${proBadge}` : `Signed in${proBadge}`;
+  signInBtn.style.display = "none";
+  signOutBtn.style.display = "inline-block";
+  updateBillingUi(plan);
 }
 
-function updateProviderUi(provider) {
-  if (!localKeySection || !openaiApiKeyInput) return;
-  const isCloud = provider === "cloud";
-  localKeySection.style.display = isCloud ? "none" : "block";
-}
-
-function render() {
+function renderResumeStatus() {
   chrome.storage.local.get(["resumes", "defaultResumeId"], (data) => {
     const resumes = data.resumes || [];
     if (!uploadStatus) return;
@@ -191,8 +169,7 @@ function render() {
       return;
     }
     const current = resumes.find((r) => r.id === data.defaultResumeId) || resumes[0];
-    const textLabel = current.text && resumeTextLooksReadable(current.text) ? "Resume text ready for Rewrite Pro." : "Resume uploaded. Paste clean resume text below for Rewrite Pro.";
-    uploadStatus.textContent = `Current resume: ${current.name}. ${textLabel}`;
+    uploadStatus.textContent = `Default resume: ${current.name}`;
   });
 }
 
@@ -200,86 +177,53 @@ function loadAiSettings() {
   chrome.storage.local.get([
     "runMode",
     "aiMode",
-    "aiProvider",
     "aiRewriteEnabled",
-    "cloudApiToken",
-    "openaiApiKey",
     "defaultTone",
     "userName",
     "aiResumeText",
     "aiCustomInstructions",
-    "debugLogging",
   ], (data) => {
     runModeSelect.value = data.runMode || "both";
-    aiModeSelect.value = data.aiMode || (data.aiRewriteEnabled === false ? "off" : "ask");
-    aiProviderSelect.value = data.aiProvider || "local";
-    if (cloudApiTokenInput) cloudApiTokenInput.value = data.cloudApiToken || "";
-    openaiApiKeyInput.value = data.openaiApiKey || "";
+    aiModeSelect.value = resolveAiMode(data);
     defaultToneSelect.value = data.defaultTone || "Professional";
     userNameInput.value = data.userName || "";
     resumeTextInput.value = data.aiResumeText || "";
     customInstructionsInput.value = data.aiCustomInstructions || "";
-    debugLoggingInput.checked = !!data.debugLogging;
-    updateProviderUi(aiProviderSelect.value);
   });
 }
 
 function saveAiSettings() {
-  const cloudToken = cloudApiTokenInput ? cloudApiTokenInput.value.trim() : "";
-  const provider = cloudToken ? "cloud" : aiProviderSelect.value;
-  if (cloudToken) aiProviderSelect.value = "cloud";
-
   chrome.storage.local.set({
     runMode: runModeSelect.value,
     aiMode: aiModeSelect.value,
-    aiProvider: provider,
-    aiRewriteEnabled: aiModeSelect.value !== "off",
-    cloudApiToken: cloudToken,
-    openaiApiKey: openaiApiKeyInput.value.trim(),
     defaultTone: defaultToneSelect.value,
     userName: userNameInput.value.trim(),
     aiResumeText: resumeTextInput.value.trim(),
     aiCustomInstructions: customInstructionsInput.value.trim(),
-    debugLogging: !!debugLoggingInput.checked,
-    irSession: null,
   }, () => {
     aiStatus.textContent = "Saved.";
     setTimeout(() => { aiStatus.textContent = ""; }, 1800);
-    updateProviderUi(provider);
-    refreshAccountUi();
   });
 }
 
-if (cloudApiTokenInput) {
-  cloudApiTokenInput.addEventListener("change", saveAiSettings);
-}
-
-if (upgradeBtn) {
-  upgradeBtn.addEventListener("click", async () => {
-    accountStatus.textContent = "Opening checkout...";
-    try {
-      await openStripeCheckout();
-      accountStatus.textContent = "Checkout opened in a new tab.";
-    } catch (err) {
-      accountStatus.textContent = err.message || String(err);
-    }
-  });
-}
+upgradeBtn?.addEventListener("click", async () => {
+  accountStatus.textContent = "Opening checkout...";
+  try {
+    await openStripeCheckout();
+    accountStatus.textContent = "Checkout opened in a new tab.";
+  } catch (err) {
+    accountStatus.textContent = err.message || String(err);
+  }
+});
 
 signInBtn.addEventListener("click", async () => {
-  accountStatus.textContent = "Opening sign-in popup — complete Google sign-in there (do not close early).";
+  accountStatus.textContent = "Opening sign-in...";
   try {
     await signInWithCloudAi();
     accountStatus.textContent = "Signed in.";
     await refreshAccountUi();
   } catch (err) {
-    const msg = err.message || String(err);
-    if (/did not approve access/i.test(msg)) {
-      accountStatus.textContent =
-        "Sign-in popup was closed or canceled. Click Sign in to Cloud AI again and finish Google sign-in in the popup.";
-    } else {
-      accountStatus.textContent = msg;
-    }
+    accountStatus.textContent = err.message || String(err);
   }
 });
 
@@ -287,11 +231,6 @@ signOutBtn.addEventListener("click", async () => {
   await signOutCloudAi();
   accountStatus.textContent = "Signed out.";
   await refreshAccountUi();
-});
-
-aiProviderSelect.addEventListener("change", () => {
-  updateProviderUi(aiProviderSelect.value);
-  saveAiSettings();
 });
 
 fileInput.addEventListener("change", async (e) => {
@@ -306,8 +245,7 @@ fileInput.addEventListener("change", async (e) => {
     if (/\.(txt|md)$/i.test(file.name) || /^text\//i.test(file.type || "")) {
       text = cleanResumeText(await readFileAsText(file));
     } else if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
-      const arrayBuffer = await readFileAsArrayBuffer(file);
-      text = bestEffortExtractPdfText(arrayBuffer);
+      text = bestEffortExtractPdfText(await readFileAsArrayBuffer(file));
     }
 
     newResumes.push({
@@ -322,12 +260,12 @@ fileInput.addEventListener("change", async (e) => {
     const resumes = (data.resumes || []).concat(newResumes);
     const updates = { resumes };
     if (!data.defaultResumeId) updates.defaultResumeId = newResumes[0].id;
-    const firstText = newResumes.find((r) => r.text && resumeTextLooksReadable(r.text))?.text || "";
+    const firstText = newResumes.find((r) => r.text)?.text || "";
     if (!data.aiResumeText && firstText) updates.aiResumeText = firstText;
     chrome.storage.local.set(updates, () => {
       fileInput.value = "";
       loadAiSettings();
-      render();
+      renderResumeStatus();
     });
   });
 });
@@ -336,5 +274,5 @@ runModeSelect.addEventListener("change", saveAiSettings);
 aiModeSelect.addEventListener("change", saveAiSettings);
 saveAiBtn.addEventListener("click", saveAiSettings);
 loadAiSettings();
-render();
+renderResumeStatus();
 refreshAccountUi();

@@ -2,20 +2,13 @@
 // Runs on jobright.ai job pages. Listens for START_RUN from the popup,
 // then walks the Insider Connection list and processes each person.
 
-let debugLoggingEnabled = false;
 let cachedJobContextForRun = null;
 let cachedJobTitleForRun = "";
 let cachedAiResumeTextForRun = "";
 
-function log(text) {
-  if (debugLoggingEnabled) console.log("[InsiderReach]", text);
-  chrome.runtime.sendMessage({ type: "LOG_STATUS", text });
-}
-
-function debugLog(text, data) {
-  if (!debugLoggingEnabled) return;
-  if (data !== undefined) console.log("[InsiderReach Debug]", text, data);
-  else console.log("[InsiderReach Debug]", text);
+function log(text, data) {
+  if (data !== undefined) console.log("[InsiderReach]", text, data);
+  else console.log("[InsiderReach]", text);
 }
 
 // Resolved by the PERSON_EMAIL_DONE message once the Gmail tab for the
@@ -278,10 +271,10 @@ function sendAiRequest(payload) {
 
 async function showAiReviewPanel({ modal, channel, text, subject = "", personName = "", personTitle = "", category = "", onApply }) {
   const settings = await new Promise((resolve) => {
-    chrome.storage.local.get(["defaultTone", "openaiApiKey", "aiRewriteEnabled", "aiMode"], resolve);
+    chrome.storage.local.get(["defaultTone", "aiRewriteEnabled", "aiMode"], resolve);
   });
 
-  const aiMode = currentAiMode || settings.aiMode || (settings.aiRewriteEnabled === false ? "off" : "ask");
+  const aiMode = currentAiMode || resolveAiMode(settings);
   if (aiMode === "off") {
     log("AI Rewrite is off. Using Jobright's original message.");
     if (onApply) onApply(text || "");
@@ -368,9 +361,6 @@ async function showAiReviewPanel({ modal, channel, text, subject = "", personNam
     const jobContext = extractJobContextForAi();
     status.textContent = mode === "pro" ? "Personalizing with job + resume..." : "Rewriting...";
     status.style.color = "#555";
-    if (mode === "pro") {
-      debugLog(`Rewrite Pro context: ${jobContext.responsibilities.length} responsibilities, ${jobContext.requiredQualifications.length} required, ${jobContext.preferredQualifications.length} preferred, ${jobContext.matchedSkills.length} matched skills.`);
-    }
     const res = await sendAiRequest({
       mode,
       channel,
@@ -446,6 +436,28 @@ function normalizeKeyPart(value) {
   return String(value || "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+function normalizeLinkedinProfileUrl(url) {
+  if (!url) return "";
+  let u = String(url).trim();
+  if (!u) return "";
+  if (u.startsWith("//")) u = "https:" + u;
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u.replace(/^\/+/, "");
+  try {
+    const parsed = new URL(u);
+    if (!parsed.hostname.includes("linkedin.com")) return "";
+    if (!/\/in\//i.test(parsed.pathname)) return "";
+    return `${parsed.origin}${parsed.pathname.replace(/\/$/, "")}/`;
+  } catch (e) {
+    return "";
+  }
+}
+
+function linkedinUrlsCompatible(a, b) {
+  const left = normalizeLinkedinProfileUrl(a);
+  const right = normalizeLinkedinProfileUrl(b);
+  return !!(left && right && left === right);
+}
+
 function dedupeKey(channel, identifier, company) {
   return `${channel}::${normalizeKeyPart(identifier)}::${channel === "email" ? "" : normalizeKeyPart(company)}`;
 }
@@ -467,9 +479,20 @@ function contactKeys(channel, { identifier = "", company = currentCompany, name 
   const keys = new Set();
   if (channel === "email") {
     if (identifier || email) keys.add(dedupeKey("email", identifier || email, ""));
+    const addEmailNameKeys = (value) => {
+      const cleaned = String(value || "").trim();
+      if (!cleaned || isBadPersonIdentifier(cleaned)) return;
+      keys.add(dedupeKey("email-name", cleaned, company));
+    };
+    if (name) addEmailNameKeys(name);
+    if (identifier && String(identifier).includes("@")) addEmailNameKeys(name || identifier);
   } else {
-    if (linkedinUrl) keys.add(dedupeKey("linkedin", linkedinUrl, ""));
-    if (identifier && String(identifier).startsWith("http")) keys.add(dedupeKey("linkedin", identifier, ""));
+    const normalizedUrl = normalizeLinkedinProfileUrl(linkedinUrl || (String(identifier).startsWith("http") ? identifier : ""));
+    if (normalizedUrl) keys.add(dedupeKey("linkedin", normalizedUrl, ""));
+    if (identifier && String(identifier).startsWith("http")) {
+      const normalizedIdentifier = normalizeLinkedinProfileUrl(identifier) || identifier;
+      keys.add(dedupeKey("linkedin", normalizedIdentifier, ""));
+    }
     const addLinkedinNameKeys = (value) => {
       const cleaned = String(value || "").trim();
       if (!cleaned || isBadPersonIdentifier(cleaned)) return;
@@ -491,6 +514,80 @@ function contactKeys(channel, { identifier = "", company = currentCompany, name 
 
 function isAlreadyContacted(channel, identifier, extra = {}) {
   return contactKeys(channel, { identifier, ...extra }).some((key) => contactedSet.has(key));
+}
+
+function parseContactKey(key) {
+  const parts = String(key || "").split("::");
+  if (parts.length < 3) return null;
+  return {
+    channel: parts[0],
+    identifier: parts[1],
+    company: parts.slice(2).join("::"),
+  };
+}
+
+function companiesCompatible(loggedCompany, checkCompany) {
+  const logged = normalizeKeyPart(loggedCompany);
+  const check = normalizeKeyPart(checkCompany);
+  if (!logged || !check) return true;
+  return logged === check;
+}
+
+function linkedinNamesCompatible(rowName, loggedName) {
+  const a = normalizeKeyPart(rowName);
+  const b = normalizeKeyPart(loggedName);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aFirst = a.split(/\s+/)[0];
+  const bFirst = b.split(/\s+/)[0];
+  if (aFirst && bFirst && aFirst.length > 1 && aFirst === bFirst) return true;
+  if (a.startsWith(`${b} `) || b.startsWith(`${a} `)) return true;
+  return false;
+}
+
+function isLinkedinPersonAlreadyContacted(name, company = currentCompany, linkedinProfileUrl = "") {
+  if (isBadPersonIdentifier(name)) {
+    if (!linkedinProfileUrl) return false;
+  } else if (isAlreadyContacted("linkedin", name, { name, company })) {
+    return true;
+  }
+
+  const normalizedProfileUrl = normalizeLinkedinProfileUrl(linkedinProfileUrl);
+  if (normalizedProfileUrl && isAlreadyContacted("linkedin", normalizedProfileUrl, { linkedinUrl: normalizedProfileUrl, company })) {
+    return true;
+  }
+
+  const firstName = isBadPersonIdentifier(name) ? "" : normalizeKeyPart(name).split(/\s+/)[0];
+  for (const key of contactedSet) {
+    if (!key.startsWith("linkedin")) continue;
+    const parsed = parseContactKey(key);
+    if (!parsed) continue;
+    if (!companiesCompatible(parsed.company, company)) continue;
+
+    const identifier = parsed.identifier;
+    if (identifier.startsWith("http")) {
+      if (normalizedProfileUrl && linkedinUrlsCompatible(identifier, normalizedProfileUrl)) return true;
+      continue;
+    }
+
+    if (isBadPersonIdentifier(name)) continue;
+    if (parsed.channel === "linkedin-first" && identifier === firstName) return true;
+    if (linkedinNamesCompatible(name, identifier)) return true;
+  }
+  return false;
+}
+
+function shouldSkipEmailForPerson(person) {
+  if (isBadPersonIdentifier(person.name)) return false;
+  return isAlreadyContacted("email", person.name, { name: person.name });
+}
+
+function shouldSkipLinkedinForPerson(person) {
+  return isLinkedinPersonAlreadyContacted(
+    person.name,
+    currentCompany,
+    person.linkedinProfileUrl || ""
+  );
 }
 
 function markContactedLocally(channel, identifier, extra = {}) {
@@ -538,7 +635,7 @@ async function waitFor(check, { timeout = 6000, interval = 250, root = document.
         const result = check();
         if (result) finish(result);
       } catch (err) {
-        debugLog("waitFor check failed", err && err.message ? err.message : String(err));
+        log("waitFor check failed", err?.message || String(err));
       }
     };
 
@@ -664,6 +761,13 @@ function findAvatars(container) {
   return Array.from(container.querySelectorAll("*")).filter(isAvatarElement);
 }
 
+function extractLinkedinUrlFromRow(rowEl) {
+  if (!rowEl || !rowEl.querySelector) return "";
+  const link = rowEl.querySelector('a[href*="/in/"], a[href*="linkedin.com/in/"]');
+  if (!link) return "";
+  return normalizeLinkedinProfileUrl(link.href || link.getAttribute("href") || "");
+}
+
 // Groups icon buttons into [emailBtn, linkedinBtn] pairs by starting from
 // each avatar and climbing up just far enough to find two icon-sized
 // buttons living alongside it.
@@ -695,6 +799,7 @@ function getPersonRows(container) {
       name: nameEl ? visibleText(nameEl) : "Unknown",
       emailBtn: icons[0],
       linkedinBtn: icons[1],
+      linkedinProfileUrl: extractLinkedinUrlFromRow(row),
     });
   }
   return rows;
@@ -744,6 +849,17 @@ function extractEmailModalData(modal) {
 
 async function tryEmail(person, resumeId) {
   await honorRunControls();
+
+  if (shouldSkipEmailForPerson(person)) {
+    log(`${person.name}: already emailed before, skipping.`);
+    return { linkedinHandled: false };
+  }
+
+  if (currentRunMode !== "email_only" && shouldSkipLinkedinForPerson(person)) {
+    log(`${person.name}: already contacted on LinkedIn before, skipping email lookup.`);
+    return { linkedinHandled: true };
+  }
+
   person.emailBtn.click();
   await sleep(2000);
 
@@ -762,7 +878,7 @@ async function tryEmail(person, resumeId) {
   if (btnText.includes("linkedin")) {
     // "Contact Info Not Found!" card, its button skips straight to the
     // LinkedIn connect modal instead of an email one.
-    if (isAlreadyContacted("linkedin", realName)) {
+    if (shouldSkipLinkedinForPerson({ name: realName })) {
       log(`${realName}: already contacted on LinkedIn before, skipping.`);
       closeAnyModal();
       return { linkedinHandled: true };
@@ -823,7 +939,7 @@ async function tryEmail(person, resumeId) {
     return { linkedinHandled: false };
   }
 
-  markContactedLocally("email", to);
+  markContactedLocally("email", to, { name: realName });
   await new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { type: "OPEN_GMAIL_COMPOSE", payload: { to, subject: subject || "", body: finalBody || body || "", resumeId, personName: realName, company: currentCompany } },
@@ -850,7 +966,17 @@ function extractLinkedinModalData(modal) {
   const viewBtn = Array.from(modal.querySelectorAll("button")).find((b) =>
     visibleText(b).toLowerCase().includes("view linkedin profile")
   );
-  return { message, viewBtn };
+  let profileUrl = "";
+  const linkCandidates = [
+    modal.querySelector('a[href*="/in/"]'),
+    modal.querySelector('a[href*="linkedin.com"]'),
+    viewBtn && viewBtn.closest('a[href*="linkedin"]'),
+  ].filter(Boolean);
+  for (const link of linkCandidates) {
+    profileUrl = normalizeLinkedinProfileUrl(link.href || link.getAttribute("href") || "");
+    if (profileUrl) break;
+  }
+  return { message, viewBtn, profileUrl };
 }
 
 function inferNameFromLinkedinMessage(message, fallback = "") {
@@ -868,10 +994,7 @@ function safeLinkedinNameForLog(personName, message = "") {
 async function tryLinkedin(person) {
   await honorRunControls();
 
-  // Only pre-skip if we have a real name. Jobright sometimes labels rows as
-  // "Unknown" or even the category name; treating those as duplicate keys made
-  // the run skip the rest of the list after the first LinkedIn connect.
-  if (!isBadPersonIdentifier(person.name) && isAlreadyContacted("linkedin", person.name, { name: person.name })) {
+  if (shouldSkipLinkedinForPerson(person)) {
     log(`${person.name}: already contacted on LinkedIn before, skipping.`);
     return;
   }
@@ -897,7 +1020,7 @@ async function handleLinkedinModalAfterOpen(personName) {
     return;
   }
 
-  const { message, viewBtn } = extractLinkedinModalData(modal);
+  const { message, viewBtn, profileUrl } = extractLinkedinModalData(modal);
   if (!message) {
     log(`${personName}: could not read the LinkedIn message, skipping.`);
     closeAnyModal();
@@ -906,13 +1029,13 @@ async function handleLinkedinModalAfterOpen(personName) {
 
   const realPersonName = safeLinkedinNameForLog(personName, message);
 
-  if (!isBadPersonIdentifier(realPersonName) && isAlreadyContacted("linkedin", realPersonName, { name: realPersonName })) {
+  if (isLinkedinPersonAlreadyContacted(realPersonName, currentCompany, profileUrl)) {
     log(`${realPersonName}: already contacted on LinkedIn before, skipping.`);
     closeAnyModal();
     return;
   }
 
-  if (!viewBtn) {
+  if (!viewBtn && !profileUrl) {
     log(`${realPersonName}: could not find the View LinkedIn Profile button, skipping.`);
     closeAnyModal();
     return;
@@ -920,6 +1043,47 @@ async function handleLinkedinModalAfterOpen(personName) {
 
   const textarea = modal.querySelector("textarea");
   log(`${realPersonName}: LinkedIn note ready.`);
+
+  const linkedinRunId = makeRunId("linkedin");
+  const usePreload = !!profileUrl;
+  let linkedinTabId = null;
+
+  await new Promise((resolve) => {
+    chrome.storage.local.set({
+      pendingLinkedinJob: {
+        note: message,
+        personName: realPersonName,
+        company: currentCompany,
+        runId: linkedinRunId,
+        profileUrl,
+        automationReady: !usePreload,
+      },
+      pendingLinkedinClaimedTabId: null,
+      lastLinkedinDoneRunId: null,
+      lastLinkedinDoneAt: null,
+    }, resolve);
+  });
+
+  if (usePreload) {
+    const openRes = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: "OPEN_LINKEDIN_PROFILE",
+        payload: {
+          profileUrl,
+          note: message,
+          personName: realPersonName,
+          company: currentCompany,
+          runId: linkedinRunId,
+          automationReady: false,
+        },
+      }, resolve);
+    });
+    linkedinTabId = openRes && openRes.tabId ? openRes.tabId : null;
+    if (linkedinTabId) {
+      log(`${realPersonName}: pre-loading LinkedIn profile while you review the note.`);
+    }
+  }
+
   const finalMessage = await showAiReviewPanel({
     modal,
     channel: "linkedin",
@@ -930,33 +1094,47 @@ async function handleLinkedinModalAfterOpen(personName) {
 
   if (finalMessage === null) {
     log(`${realPersonName}: AI panel closed. LinkedIn action cancelled for this person.`);
+    if (linkedinTabId) chrome.tabs.remove(linkedinTabId);
+    chrome.storage.local.remove(["pendingLinkedinJob", "pendingLinkedinClaimedTabId"], () => {});
     closeAnyModal();
     return;
   }
 
-  const linkedinRunId = makeRunId("linkedin");
+  // Start waiting before opening/activating LinkedIn so a very fast completion
+  // cannot race past this Jobright content script.
+  const donePromise = waitForLinkedinDone(linkedinRunId);
+
   await new Promise((resolve) => {
     chrome.storage.local.set({
-      pendingLinkedinJob: { note: finalMessage || message, personName: realPersonName, company: currentCompany, runId: linkedinRunId },
-      pendingLinkedinClaimedTabId: null,
-      lastLinkedinDoneRunId: null,
-      lastLinkedinDoneAt: null,
+      pendingLinkedinJob: {
+        note: finalMessage || message,
+        personName: realPersonName,
+        company: currentCompany,
+        runId: linkedinRunId,
+        profileUrl,
+        automationReady: true,
+      },
     }, resolve);
   });
 
-  // Start waiting before the click so a very fast LinkedIn completion cannot
-  // race past this Jobright content script.
-  const donePromise = waitForLinkedinDone(linkedinRunId);
-
-  log(`${realPersonName}: opening LinkedIn profile now. Waiting for you to hit Send.`);
-  viewBtn.click();
-  closeAnyModal();
+  if (usePreload && linkedinTabId) {
+    log(`${realPersonName}: LinkedIn profile ready. Waiting for you to hit Send.`);
+    chrome.tabs.update(linkedinTabId, { active: true });
+    closeAnyModal();
+  } else {
+    log(`${realPersonName}: opening LinkedIn profile now. Waiting for you to hit Send.`);
+    if (viewBtn) viewBtn.click();
+    closeAnyModal();
+  }
 
   await donePromise;
   // Mark only after the LinkedIn step finishes. Do not mark placeholder names
   // like Unknown before opening LinkedIn, otherwise every later Unknown row is
   // treated as a duplicate and skipped.
-  markContactedLocally("linkedin", realPersonName, { name: realPersonName });
+  markContactedLocally("linkedin", realPersonName, {
+    name: realPersonName,
+    linkedinUrl: profileUrl || "",
+  });
   log(`${realPersonName}: LinkedIn step finished. Moving to the next person.`);
   await honorRunControls();
 }
@@ -996,9 +1174,8 @@ async function runAutomation(resumeId, options = {}) {
   cachedJobTitleForRun = "";
   cachedAiResumeTextForRun = "";
   const runSettings = await new Promise((resolve) => {
-    chrome.storage.local.get(["debugLogging", "aiResumeText", "resumes", "activeResumeId"], resolve);
+    chrome.storage.local.get(["aiResumeText", "resumes", "activeResumeId"], resolve);
   });
-  debugLoggingEnabled = !!runSettings.debugLogging;
   cachedAiResumeTextForRun = String(runSettings.aiResumeText || "");
   if (!cachedAiResumeTextForRun && runSettings.activeResumeId && Array.isArray(runSettings.resumes)) {
     const selectedResume = runSettings.resumes.find((r) => r.id === runSettings.activeResumeId);
@@ -1020,7 +1197,7 @@ async function runAutomation(resumeId, options = {}) {
   log(`Starting run on this job page. Mode: ${currentRunMode.replace("_", " ")}; AI: ${currentAiMode}.`);
   await loadContactedSet();
   if (currentCompany) log(`Detected company: ${currentCompany}`);
-  debugLog("Cached run context", {
+  log("Cached run context", {
     jobTitle: cachedJobTitleForRun,
     resumeChars: cachedAiResumeTextForRun.length,
     responsibilities: cachedJobContextForRun.responsibilities.length,
@@ -1082,10 +1259,23 @@ async function runAutomation(resumeId, options = {}) {
         continue;
       }
 
+      if (currentRunMode === "linkedin_only" && shouldSkipLinkedinForPerson(beforeEmail)) {
+        log(`${beforeEmail.name}: already contacted on LinkedIn before, skipping.`);
+        continue;
+      }
+
       let emailResult = { linkedinHandled: false };
       if (currentRunMode !== "linkedin_only") {
-        log(`Working on ${beforeEmail.name} (email)...`);
-        emailResult = await tryEmail(beforeEmail, resumeId);
+        if (shouldSkipEmailForPerson(beforeEmail) && shouldSkipLinkedinForPerson(beforeEmail)) {
+          log(`${beforeEmail.name}: already contacted on email and LinkedIn before, skipping.`);
+          emailResult = { linkedinHandled: true };
+        } else if (shouldSkipEmailForPerson(beforeEmail)) {
+          log(`${beforeEmail.name}: already emailed before, skipping email.`);
+          emailResult = { linkedinHandled: false };
+        } else {
+          log(`Working on ${beforeEmail.name} (email)...`);
+          emailResult = await tryEmail(beforeEmail, resumeId);
+        }
         await sleep(800);
       } else {
         log(`LinkedIn-only mode: skipping email for ${beforeEmail.name}.`);
@@ -1103,8 +1293,12 @@ async function runAutomation(resumeId, options = {}) {
 
       if (currentRunMode !== "email_only" && (!emailResult || !emailResult.linkedinHandled)) {
         const beforeLinkedin = getPersonRows(document.body)[idx] || beforeEmail;
-        log(`Working on ${beforeLinkedin.name} (LinkedIn)...`);
-        await tryLinkedin(beforeLinkedin);
+        if (shouldSkipLinkedinForPerson(beforeLinkedin)) {
+          log(`${beforeLinkedin.name}: already contacted on LinkedIn before, skipping.`);
+        } else {
+          log(`Working on ${beforeLinkedin.name} (LinkedIn)...`);
+          await tryLinkedin(beforeLinkedin);
+        }
         await sleep(800);
       } else if (currentRunMode === "email_only") {
         log(`Email-only mode: skipping LinkedIn for ${beforeEmail.name}.`);

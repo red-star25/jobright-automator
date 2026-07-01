@@ -3,7 +3,6 @@ const resumeSelect = document.getElementById("resumeSelect");
 const startBtn = document.getElementById("startBtn");
 const optionsBtn = document.getElementById("optionsBtn");
 const dashboardBtn = document.getElementById("dashboardBtn");
-const statusBox = document.getElementById("status"); // optional; popup logs are hidden in this build
 const statToday = document.getElementById("statToday");
 const statTotal = document.getElementById("statTotal");
 const statRate = document.getElementById("statRate");
@@ -12,52 +11,39 @@ const aiModeSelect = document.getElementById("aiModeSelect");
 const aiModeHint = document.getElementById("aiModeHint");
 const accountStripText = document.getElementById("accountStripText");
 
-function renderAccountStrip() {
-  chrome.storage.local.get(["aiProvider", "authSession", "cloudUsage", "cloudApiToken"], async (data) => {
-    const provider = data.aiProvider || "local";
-    if (provider !== "cloud") {
-      accountStripText.textContent = "Using Local AI. Sign in via Manage resumes > Account for Cloud AI.";
-      return;
-    }
-
-    const session = data.authSession;
-    const cloudApiToken = String(data.cloudApiToken || "").trim();
-    if (!cloudApiToken && (!session || !session.access_token)) {
-      accountStripText.textContent = "Cloud AI selected. Add a Cloud API token or sign in from Manage resumes > Account.";
-      return;
-    }
-
-    let usage = data.cloudUsage;
-    if (typeof fetchCloudMe === "function") {
-      const fresh = await fetchCloudMe();
-      if (fresh) usage = fresh;
-    }
-
-    const email = usage?.email || session.email || "Signed in";
-    if (usage?.limits) {
-      const rewriteLeft = Math.max(0, usage.limits.rewrite - (usage.usage?.rewrite || 0));
-      const proLeft = Math.max(0, usage.limits.pro - (usage.usage?.pro || 0));
-      accountStripText.textContent = `${email} · ${rewriteLeft} Rewrite · ${proLeft} Pro left this month (${usage.plan || "free"} plan)`;
-    } else {
-      accountStripText.textContent = `${email} · Cloud AI active`;
-    }
-  });
+function aiModeText(mode) {
+  if (mode === "off") return "Using Jobright's original messages.";
+  if (mode === "auto_rewrite") return "Auto Rewrite before each send.";
+  if (mode === "auto_pro") return "Auto Rewrite Pro before each send.";
+  return "You'll choose Rewrite or Rewrite Pro each time.";
 }
 
-function aiModeText(mode) {
-  if (mode === "off") return "Skip AI and use Jobright's original text.";
-  if (mode === "auto_rewrite") return "Automatically run Rewrite, then show a preview.";
-  if (mode === "auto_pro") return "Automatically run Rewrite Pro with job + resume, then show a preview.";
-  return "Show Rewrite / Rewrite Pro and let you choose each time.";
+async function renderAccountStrip() {
+  const data = await storageGet(["authSession", "cloudUsage"]);
+  const session = data.authSession;
+  if (!session?.access_token) {
+    accountStripText.textContent = "Sign in from Settings to use AI rewrites.";
+    return;
+  }
+
+  let usage = (await fetchCloudMe()) || data.cloudUsage;
+  const email = usage?.email || session.email || "Signed in";
+  const planLabel = isProPlan(usage?.plan) ? "Pro" : "Free";
+
+  if (usage?.limits) {
+    const rewriteLeft = Math.max(0, usage.limits.rewrite - (usage.usage?.rewrite || 0));
+    const proLeft = Math.max(0, usage.limits.pro - (usage.usage?.pro || 0));
+    accountStripText.textContent = `${email} · ${planLabel} · ${rewriteLeft} Rewrite · ${proLeft} Pro left`;
+  } else {
+    accountStripText.textContent = `${email} · ${planLabel}`;
+  }
 }
 
 function loadWorkflowSettings() {
   chrome.storage.local.get(["runMode", "aiMode", "aiRewriteEnabled"], (data) => {
     runModeSelect.value = data.runMode || "both";
-    let mode = data.aiMode;
-    if (!mode) mode = data.aiRewriteEnabled === false ? "off" : "ask";
-    aiModeSelect.value = mode;
-    aiModeHint.textContent = aiModeText(mode);
+    aiModeSelect.value = resolveAiMode(data);
+    aiModeHint.textContent = aiModeText(aiModeSelect.value);
   });
 }
 
@@ -67,7 +53,7 @@ runModeSelect.addEventListener("change", () => {
 
 aiModeSelect.addEventListener("change", () => {
   const mode = aiModeSelect.value;
-  chrome.storage.local.set({ aiMode: mode, aiRewriteEnabled: mode !== "off" }, () => {
+  chrome.storage.local.set({ aiMode: mode }, () => {
     aiModeHint.textContent = aiModeText(mode);
   });
 });
@@ -93,7 +79,7 @@ function loadResumes() {
   chrome.storage.local.get(["resumes", "defaultResumeId"], (data) => {
     const resumes = data.resumes || [];
     resumeSelect.innerHTML = "";
-    if (resumes.length === 0) {
+    if (!resumes.length) {
       const opt = document.createElement("option");
       opt.textContent = "No resumes added yet";
       opt.disabled = true;
@@ -112,24 +98,27 @@ function loadResumes() {
   });
 }
 
-function renderStatus() {
-  // Status logs are intentionally hidden from the popup UI.
-  // They are still stored internally for debugging when needed.
-}
-
 startBtn.addEventListener("click", () => {
   const resumeId = resumeSelect.value;
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
-    if (!tab || !tab.url || !tab.url.includes("jobright.ai")) {
+    if (!tab?.url?.includes("jobright.ai")) {
       startBtn.textContent = "Open Jobright first";
       setTimeout(() => { startBtn.textContent = "Preview + Start"; }, 1600);
       return;
     }
-    chrome.storage.local.set({ statusLog: [], activeResumeId: resumeId, jobrightTabId: tab.id, runMode: runModeSelect.value, aiMode: aiModeSelect.value, aiRewriteEnabled: aiModeSelect.value !== "off" }, () => {
-      chrome.tabs.sendMessage(tab.id, { type: "START_RUN", resumeId, runMode: runModeSelect.value, aiMode: aiModeSelect.value }, () => {
-        // content script will log its own progress via storage
-      });
+    chrome.storage.local.set({
+      activeResumeId: resumeId,
+      jobrightTabId: tab.id,
+      runMode: runModeSelect.value,
+      aiMode: aiModeSelect.value,
+    }, () => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "START_RUN",
+        resumeId,
+        runMode: runModeSelect.value,
+        aiMode: aiModeSelect.value,
+      }, () => {});
     });
   });
 });

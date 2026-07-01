@@ -54,45 +54,6 @@
       color: #777;
       margin-bottom: 10px;
     }
-
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      background: #f7fffb;
-      border: 1px solid #d8f2e5;
-      border-radius: 8px;
-      padding: 8px 10px;
-      margin: 10px 0 10px;
-      font-size: 12px;
-    }
-    .toggle-row .toggle-text strong { display: block; font-size: 13px; }
-    .toggle-row .toggle-text span { color: #666; font-size: 11px; }
-    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: #c9c9c9;
-      transition: .18s;
-      border-radius: 999px;
-    }
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 18px;
-      width: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      transition: .18s;
-      border-radius: 50%;
-      box-shadow: 0 1px 3px rgba(0,0,0,.25);
-    }
-    .switch input:checked + .slider { background: #2fa86f; }
-    .switch input:checked + .slider:before { transform: translateX(18px); }
     .field-label { font-size:12px; font-weight:600; margin:8px 0 4px; display:block; }
     .control-row { display:grid; grid-template-columns:1fr; gap:6px; margin-bottom:8px; }
     select.compact { margin-bottom:0; }
@@ -138,9 +99,9 @@
     <img src="icons/icon48.png" alt="InsiderReach logo" />
     <h1>InsiderReach</h1>
   </div>
-  <div class="hint">Referral outreach, faster. Open a Jobright job page with an Insider Connection list, pick a resume, then hit Start.</div>
+  <div class="hint">Open a Jobright job page, pick a resume, and start outreach.</div>
 
-  <div id="accountStrip"><strong>Cloud AI</strong><span id="accountStripText">Loading account...</span></div>
+  <div id="accountStrip"><strong>Account</strong><span id="accountStripText">Loading...</span></div>
 
   <label for="resumeSelect" style="font-size:12px;">Resume to attach</label>
   <select id="resumeSelect"></select>
@@ -159,7 +120,7 @@
     <option value="auto_rewrite">Auto Rewrite, then preview</option>
     <option value="auto_pro">Auto Rewrite Pro, then preview</option>
   </select>
-  <div class="hint" id="aiModeHint">Choose how InsiderReach uses AI before each send.</div>
+  <div class="hint" id="aiModeHint"></div>
 
   <button id="startBtn" class="primary">Preview + Start</button>
   <button id="optionsBtn" class="secondary">Manage resumes</button>

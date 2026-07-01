@@ -1,4 +1,4 @@
-// Auth helpers for Cloud AI (InsiderReach JWT + optional Supabase sign-in).
+// Auth helpers for Cloud AI (InsiderReach JWT + Supabase sign-in).
 
 function storageGet(keys) {
   return new Promise((resolve) => {
@@ -26,7 +26,6 @@ async function getAuthSession() {
 async function saveAuthSession(session) {
   await storageSet({
     authSession: session,
-    aiProvider: "cloud",
     cloudUsage: null,
     irSession: null,
   });
@@ -38,14 +37,13 @@ async function clearAuthSession() {
 
 async function refreshAuthSessionIfNeeded() {
   const session = await getAuthSession();
-  if (!session || !session.refresh_token) return session;
+  if (!session?.refresh_token) return session;
 
   const expiresAt = Number(session.expires_at || 0);
   const now = Math.floor(Date.now() / 1000);
   if (expiresAt - now > 300) return session;
 
-  const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "";
-  const response = await fetch(`${webBase}/api/auth/refresh`, {
+  const response = await fetch(`${getWebAppBase()}/api/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: session.refresh_token }),
@@ -84,10 +82,11 @@ function normalizeCloudMeResponse(json) {
   };
 }
 
+function isProPlan(plan) {
+  return String(plan || "").toLowerCase() === "pro";
+}
+
 async function getRawCloudCredential() {
-  const data = await storageGet(["cloudApiToken", "authSession"]);
-  const devToken = String(data.cloudApiToken || "").trim();
-  if (devToken) return devToken;
   const session = await refreshAuthSessionIfNeeded();
   return session?.access_token || null;
 }
@@ -102,9 +101,8 @@ async function exchangeIrSessionIfNeeded() {
     return data.irSession.access_token;
   }
 
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
   try {
-    const response = await fetch(`${apiBase}/v1/auth/session`, {
+    const response = await fetch(`${getApiBase()}/v1/auth/session`, {
       method: "POST",
       headers: { Authorization: `Bearer ${raw}` },
     });
@@ -136,8 +134,7 @@ async function fetchCloudMe() {
   const token = await getCloudAuthToken();
   if (!token) return null;
 
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
-  const response = await fetch(`${apiBase}/v1/me`, {
+  const response = await fetch(`${getApiBase()}/v1/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) return null;
@@ -151,10 +148,9 @@ async function fetchCloudMe() {
 
 async function openStripeCheckout() {
   const token = await getCloudAuthToken();
-  if (!token) throw new Error("Sign in or add a Cloud API token first.");
+  if (!token) throw new Error("Sign in first to upgrade.");
 
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
-  const response = await fetch(`${apiBase}/v1/stripe/checkout`, {
+  const response = await fetch(`${getApiBase()}/v1/stripe/checkout`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -183,9 +179,8 @@ function parseAuthHash(url) {
 
 async function signInWithCloudAi() {
   return new Promise((resolve, reject) => {
-    const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "";
     const redirectUrl = chrome.identity.getRedirectURL("auth");
-    const startUrl = `${webBase}/auth/extension-start?redirect=${encodeURIComponent(redirectUrl)}`;
+    const startUrl = `${getWebAppBase()}/auth/extension-start?redirect=${encodeURIComponent(redirectUrl)}`;
 
     chrome.identity.launchWebAuthFlow({ url: startUrl, interactive: true }, async (callbackUrl) => {
       if (chrome.runtime.lastError) {
@@ -228,9 +223,8 @@ async function logCloudUsageEvent(payload) {
   if (!token) return;
 
   const mode = payload.mode === "pro" || payload.mode === "rewritePro" ? "rewritePro" : "rewrite";
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
   try {
-    await fetch(`${apiBase}/v1/usage/events`, {
+    await fetch(`${getApiBase()}/v1/usage/events`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
