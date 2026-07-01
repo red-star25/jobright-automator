@@ -22,7 +22,7 @@ function looksLikeJwt(token: string): boolean {
 }
 
 async function resolveUserFromToken(token: string): Promise<AuthUser | null> {
-  if (token === env.DEV_AUTH_TOKEN) {
+  if (process.env.NODE_ENV !== "production" && token === env.DEV_AUTH_TOKEN) {
     return ensureDevUser();
   }
 

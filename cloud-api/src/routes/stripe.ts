@@ -11,8 +11,7 @@ import {
 } from "../services/usage.js";
 
 function appUrl(path = "") {
-  const base = process.env.PUBLIC_APP_URL || "https://app.insiderreach.com";
-  return `${base.replace(/\/$/, "")}${path}`;
+  return `${env.PUBLIC_APP_URL.replace(/\/$/, "")}${path}`;
 }
 
 export async function stripeRoutes(app: FastifyInstance) {

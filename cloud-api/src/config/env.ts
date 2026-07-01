@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+export const PRODUCTION_APP_URL = "https://web-gamma-silk-53.vercel.app";
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   DATABASE_URL: z.string().min(1),
@@ -15,6 +17,9 @@ const envSchema = z.object({
   STRIPE_PRO_PRICE_ID: z.string().optional(),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
+  PUBLIC_APP_URL: z.string().url().default(PRODUCTION_APP_URL),
+  REWRITE_RATE_LIMIT_FREE_PER_MIN: z.coerce.number().int().positive().default(10),
+  REWRITE_RATE_LIMIT_PRO_PER_MIN: z.coerce.number().int().positive().default(30),
   ALLOWED_EXTENSION_ORIGINS: z.string().optional(),
 });
 
