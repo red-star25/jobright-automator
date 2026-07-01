@@ -26,7 +26,8 @@
     "https://api.openai.com/*",
     "http://localhost:3000/*",
     "https://app.insiderreach.com/*",
-    "http://localhost:8080/*"
+    "http://localhost:8080/*",
+    "https://jobright-automator-production.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js"
