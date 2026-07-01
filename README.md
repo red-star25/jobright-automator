@@ -1,8 +1,6 @@
-# Jobright Outreach Autopilot
+# InsiderReach
 
-A Chrome extension that speeds up the Insider Connection outreach flow on
-Jobright: drafting the referral email in Gmail with your resume attached,
-and prepping the LinkedIn connection note, person by person.
+Referral outreach, faster. InsiderReach is a Chrome extension that speeds up the Insider Connection outreach flow on Jobright: drafting the referral email in Gmail with your resume attached, and prepping the LinkedIn connection note, person by person.
 
 You still click the final Send on both the email and the LinkedIn request,
 nothing goes out without you reviewing it first.
@@ -38,6 +36,15 @@ locally (name, company, channel, date). Two things use this:
 The popup also shows a quick Today / Total / Reply rate summary without
 needing to open the full dashboard.
 
+## AI Rewrite toggle
+
+The popup has an **AI Rewrite** switch:
+
+- **On**: InsiderReach pauses on each Jobright email/LinkedIn popup and shows the floating Rewrite / Rewrite Pro panel.
+- **Off**: InsiderReach skips the AI panel, uses Jobright's original message, and keeps the automation moving normally.
+
+You can also change the same setting from **Manage resumes → AI Settings**.
+
 ## Running it
 
 1. Open a Jobright job page that has an "Insider Connection" section with people listed.
@@ -60,7 +67,7 @@ than guessing class names, but it can still miss things. If something
 doesn't work:
 
 - Open the page's DevTools console (right-click > Inspect > Console tab)
-  before clicking Start, and copy any red errors or `[Jobright Autopilot]`
+  before clicking Start, and copy any red errors or `[InsiderReach]`
   log lines back to me.
 - If it can't find the Insider Connection section at all, right-click that
   section on the page, choose Inspect, and send me a screenshot of the
@@ -78,3 +85,98 @@ doesn't work:
 - `content_jobright.js` - finds people and drives both flows
 - `content_gmail.js` - attaches the resume in the new Gmail tab
 - `content_linkedin.js` - clicks Connect and pastes the note
+
+## AI rewrite features
+
+InsiderReach now supports two optional AI actions inside the Jobright email and LinkedIn message popups:
+
+- **Rewrite**: rewrites Jobright's existing message in the selected tone.
+- **Rewrite Pro**: uses the message plus job/person context and your saved resume text to make the outreach more personalized.
+
+Available tones: Professional, Friendly, Concise, Confident, Warm referral ask, Student/new grad, and Recruiter-style.
+
+### AI setup
+
+1. Open **Manage resumes** from the extension popup.
+2. Add your OpenAI API key in **AI Settings**.
+3. Choose a default tone.
+4. Upload your resume PDF. InsiderReach will try to extract text from it for Rewrite Pro.
+5. If the extracted resume text looks incomplete, paste your resume text manually into the Resume text box.
+
+The local version stores your API key in Chrome local storage on your own browser. This is fine for personal testing, but if you share or publish the extension, move AI calls to a backend so the key is not exposed.
+
+### AI flow
+
+When an email or LinkedIn message popup opens, InsiderReach pauses and shows an **InsiderReach AI** panel. Nothing is sent to AI automatically. Click **Rewrite** or **Rewrite Pro** only when you want AI help, review/edit the result, then click **Use this message**. Click **Use original** to continue without AI.
+
+
+## Rewrite Pro resume text note
+
+InsiderReach can try to extract text from uploaded PDFs, but many resume PDFs store text in compressed or custom-font encoded form. If the extracted text looks like random symbols, paste clean resume text into **Options > AI Settings > Resume text for Rewrite Pro** or upload a `.txt` copy of your resume. Rewrite Pro now refuses to run when the resume text looks unreadable, instead of silently generating a weaker job-only message.
+
+To inspect AI calls, open `chrome://extensions`, inspect the InsiderReach service worker, and check the Console/Network tabs. Logs show safe metadata only, such as mode, tone, job-section counts, and character counts. They do not log your API key or full resume text.
+
+
+## New workflow controls
+
+The popup now includes a **Run mode** selector:
+
+- **Email + LinkedIn**: the normal person-by-person flow.
+- **Email only**: drafts Gmail messages and skips LinkedIn.
+- **LinkedIn only**: skips email and only prepares LinkedIn notes.
+
+It also includes an **AI Rewrite mode** selector:
+
+- **Off**: use Jobright's original message and keep automation moving.
+- **Ask every time**: show the Rewrite / Rewrite Pro panel and wait for your choice.
+- **Auto Rewrite**: automatically rewrite the message, then show a preview.
+- **Auto Rewrite Pro**: automatically personalize with job + resume context, then show a preview.
+
+The popup also has recovery buttons: **Retry current**, **Skip current**, **Resume**, and **Stop**. These are meant for testing or when a page gets stuck waiting for Gmail/LinkedIn.
+
+## Rewrite Pro details
+
+Rewrite Pro now extracts the Jobright job context from:
+
+- Responsibilities
+- Required qualifications
+- Preferred qualifications
+- Jobright matched skill tags
+
+It combines that with the resume text in Options and your optional custom AI instructions. When the AI returns a result, the preview panel shows the concrete resume proof point it used so you can verify that it did not make something up.
+
+## Duplicate detection
+
+The outreach log now stores stronger identifiers. Email rows use the email address. LinkedIn rows store the LinkedIn profile URL when the LinkedIn page is opened, and still fall back to name + company when the URL is not available yet. This helps avoid double-contacting people across different job pages.
+
+
+## AI safety tweaks
+
+Rewrite Pro blocks dummy placeholders such as XYZ Corp, ABC, Acme, and Example Corp. If the AI tries to invent one, InsiderReach asks for a revision or shows an error instead of using it.
+
+
+## 0.2.2 update
+
+- Improved LinkedIn log names by reading the profile h1, Connect button aria-label, and invite modal name before saving the outreach log.
+
+## 0.2.3 LinkedIn continue fix
+
+- Prevents placeholder Jobright row names like "Unknown" and category labels from being used as duplicate-detection keys.
+- Reads the real LinkedIn recipient name from the Jobright LinkedIn note (`Hi Name, ...`) before opening the LinkedIn profile.
+- Marks a LinkedIn contact as locally contacted only after the LinkedIn step finishes, so one `Unknown` row cannot cause the rest of the list to be skipped.
+
+
+## 0.2.2 duplicate handling fix
+
+- LinkedIn profiles that already show Pending/Message/Connected now close automatically and allow the run to continue.
+- LinkedIn duplicate detection now includes a company-scoped first-name fallback so a rerun can match Jobright's `Hi FirstName` note to a full LinkedIn log entry.
+
+
+## LinkedIn profile targeting safety
+
+The LinkedIn script now ignores Connect buttons in recommendation/right-rail sections like "More profiles for you" and verifies the invite dialog name matches the current profile before continuing.
+
+
+## Stopping after completion
+
+After InsiderReach finishes all visible people on a Jobright job page, it marks that page as completed for the current tab and ignores another Start click on the same page. Refresh the page if you intentionally want to rerun the same job.

@@ -1,38 +1,71 @@
 {
   "manifest_version": 3,
-  "name": "Jobright Outreach Autopilot",
-  "version": "0.1.0",
-  "description": "Speeds up sending referral emails and LinkedIn connection requests from Jobright's Insider Connection list.",
-  "permissions": ["storage", "tabs", "scripting", "activeTab", "unlimitedStorage"],
+  "name": "InsiderReach",
+  "version": "0.2.7",
+  "description": "AI-assisted Jobright outreach for personalized Gmail drafts and LinkedIn connection notes.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "unlimitedStorage"
+  ],
   "host_permissions": [
     "https://jobright.ai/*",
     "https://*.jobright.ai/*",
     "https://mail.google.com/*",
     "https://www.linkedin.com/*",
-    "https://linkedin.com/*"
+    "https://linkedin.com/*",
+    "https://api.openai.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Jobright Outreach Autopilot"
+    "default_title": "InsiderReach",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["https://jobright.ai/*", "https://*.jobright.ai/*"],
-      "js": ["content_jobright.js"],
+      "matches": [
+        "https://jobright.ai/*",
+        "https://*.jobright.ai/*"
+      ],
+      "js": [
+        "content_jobright.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://mail.google.com/*"],
-      "js": ["content_gmail.js"],
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": [
+        "content_gmail.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.linkedin.com/*", "https://linkedin.com/*"],
-      "js": ["content_linkedin.js"],
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*"
+      ],
+      "js": [
+        "content_linkedin.js"
+      ],
       "run_at": "document_idle"
     }
   ]

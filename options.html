@@ -33,16 +33,93 @@
       margin-left: 6px;
     }
     input[type="file"] { margin: 14px 0; }
+    .section {
+      border-top: 1px solid #eee;
+      margin-top: 22px;
+      padding-top: 18px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin: 12px 0 5px;
+    }
+    input[type="password"], input[type="text"], select, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d9d9d9;
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+      font-size: 13px;
+    }
+    textarea { min-height: 130px; resize: vertical; }
+    .save-row { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+    .save-row button { padding: 7px 12px; border-radius: 6px; border: 1px solid #ccc; background: #2fa86f; color: white; cursor: pointer; }
+    .small-note { font-size: 12px; color: #666; line-height: 1.4; }
+    #aiStatus { font-size: 12px; color: #2fa86f; }
   </style>
 </head>
 <body>
   <h1>Manage resumes</h1>
   <p style="font-size:13px; color:#555;">
-    Upload the PDF resumes you want available when running the autopilot.
+    Upload the PDF resumes you want attached when running the autopilot. For Rewrite Pro, clean resume text is needed too.
     Set one as default, it will be pre-selected in the popup unless you change it.
   </p>
-  <input type="file" id="fileInput" accept="application/pdf" multiple />
+  <input type="file" id="fileInput" accept="application/pdf,.pdf,text/plain,.txt,.md" multiple />
   <div id="list"></div>
+
+
+  <div class="section">
+    <h1>AI Settings</h1>
+    <p class="small-note">Local version: your OpenAI API key is stored in Chrome local storage on this browser. Use this for personal testing only.</p>
+
+    <label for="runMode">Default run mode</label>
+    <select id="runMode">
+      <option value="both">Email + LinkedIn</option>
+      <option value="email_only">Email only</option>
+      <option value="linkedin_only">LinkedIn only</option>
+    </select>
+
+    <label for="aiMode">AI Rewrite mode</label>
+    <select id="aiMode">
+      <option value="off">Off - use Jobright original</option>
+      <option value="ask">Ask every time</option>
+      <option value="auto_rewrite">Auto Rewrite, then preview</option>
+      <option value="auto_pro">Auto Rewrite Pro, then preview</option>
+    </select>
+    <p class="small-note">Use Off when you want InsiderReach to keep the automation moving with Jobright's original message.</p>
+
+    <label for="openaiApiKey">OpenAI API key</label>
+    <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
+
+    <label for="defaultTone">Default tone</label>
+    <select id="defaultTone">
+      <option>Professional</option>
+      <option>Friendly</option>
+      <option>Concise</option>
+      <option>Confident</option>
+      <option>Warm referral ask</option>
+      <option>Student/new grad</option>
+      <option>Recruiter-style</option>
+    </select>
+
+    <label for="userName">Your name / signature</label>
+    <input type="text" id="userName" placeholder="Dhruv" />
+
+    <label for="customInstructions">Custom AI instructions</label>
+    <textarea id="customInstructions" placeholder="Optional. Example: Always mention that I am a CS Master's student at CSU Fullerton. Never mention GPA. Keep the ask low-pressure."></textarea>
+    <p class="small-note">These instructions are added to both Rewrite and Rewrite Pro, but the AI is still told not to invent facts.</p>
+
+    <label for="resumeText">Resume text for Rewrite Pro</label>
+    <textarea id="resumeText" placeholder="This auto-fills when PDF text extraction works. You can also paste your resume text here for better Rewrite Pro results."></textarea>
+    <p class="small-note"><strong>Important:</strong> many PDFs store text in compressed/font-encoded form, so browser-only extraction can produce unreadable symbols. If this box has gibberish, paste your clean resume text manually here, or upload a .txt version of your resume. Rewrite Pro will now refuse to run if this text is missing or unreadable.</p>
+
+    <div class="save-row">
+      <button id="saveAiBtn">Save AI settings</button>
+      <span id="aiStatus"></span>
+    </div>
+  </div>
 
   <script src="options.js"></script>
 </body>

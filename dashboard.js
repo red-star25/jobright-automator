@@ -32,7 +32,7 @@ function render() {
         <td>${escapeHtml(e.name || "Unknown")}</td>
         <td>${escapeHtml(e.company || "")}</td>
         <td><span class="channel-pill channel-${e.channel}">${e.channel === "email" ? "Email" : "LinkedIn"}</span></td>
-        <td>${escapeHtml(e.channel === "email" ? (e.identifier || "") : "")}</td>
+        <td>${escapeHtml(e.channel === "email" ? (e.identifier || "") : (e.linkedinUrl || e.identifier || ""))}</td>
         <td>${formatDate(e.date)}</td>
         <td><span class="status-pill ${e.status === "replied" ? "status-replied" : ""}">${e.status === "replied" ? "Replied" : "Sent"}</span></td>
         <td>${e.status === "replied"
@@ -45,7 +45,7 @@ function render() {
       <table>
         <thead>
           <tr>
-            <th>Name</th><th>Company</th><th>Channel</th><th>Email</th><th>Date</th><th>Status</th><th></th>
+            <th>Name</th><th>Company</th><th>Channel</th><th>Identifier</th><th>Date</th><th>Status</th><th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>

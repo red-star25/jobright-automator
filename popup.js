@@ -7,6 +7,39 @@ const statusBox = document.getElementById("status");
 const statToday = document.getElementById("statToday");
 const statTotal = document.getElementById("statTotal");
 const statRate = document.getElementById("statRate");
+const runModeSelect = document.getElementById("runModeSelect");
+const aiModeSelect = document.getElementById("aiModeSelect");
+const aiModeHint = document.getElementById("aiModeHint");
+
+
+
+function aiModeText(mode) {
+  if (mode === "off") return "Skip AI and use Jobright's original text.";
+  if (mode === "auto_rewrite") return "Automatically run Rewrite, then show a preview.";
+  if (mode === "auto_pro") return "Automatically run Rewrite Pro with job + resume, then show a preview.";
+  return "Show Rewrite / Rewrite Pro and let you choose each time.";
+}
+
+function loadWorkflowSettings() {
+  chrome.storage.local.get(["runMode", "aiMode", "aiRewriteEnabled"], (data) => {
+    runModeSelect.value = data.runMode || "both";
+    let mode = data.aiMode;
+    if (!mode) mode = data.aiRewriteEnabled === false ? "off" : "ask";
+    aiModeSelect.value = mode;
+    aiModeHint.textContent = aiModeText(mode);
+  });
+}
+
+runModeSelect.addEventListener("change", () => {
+  chrome.storage.local.set({ runMode: runModeSelect.value });
+});
+
+aiModeSelect.addEventListener("change", () => {
+  const mode = aiModeSelect.value;
+  chrome.storage.local.set({ aiMode: mode, aiRewriteEnabled: mode !== "off" }, () => {
+    aiModeHint.textContent = aiModeText(mode);
+  });
+});
 
 function renderOutreachStats() {
   chrome.storage.local.get("outreachLog", (data) => {
@@ -66,8 +99,8 @@ startBtn.addEventListener("click", () => {
       statusBox.textContent = "Open a Jobright job page first, then click Start.";
       return;
     }
-    chrome.storage.local.set({ statusLog: [], activeResumeId: resumeId, jobrightTabId: tab.id }, () => {
-      chrome.tabs.sendMessage(tab.id, { type: "START_RUN", resumeId }, () => {
+    chrome.storage.local.set({ statusLog: [], activeResumeId: resumeId, jobrightTabId: tab.id, runMode: runModeSelect.value, aiMode: aiModeSelect.value, aiRewriteEnabled: aiModeSelect.value !== "off" }, () => {
+      chrome.tabs.sendMessage(tab.id, { type: "START_RUN", resumeId, runMode: runModeSelect.value, aiMode: aiModeSelect.value }, () => {
         // content script will log its own progress via storage
       });
     });
@@ -79,6 +112,7 @@ optionsBtn.addEventListener("click", () => {
 });
 
 loadResumes();
+loadWorkflowSettings();
 renderStatus();
 renderOutreachStats();
 setInterval(renderStatus, 1000);
