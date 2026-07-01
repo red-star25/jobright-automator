@@ -13,6 +13,7 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRO_PRICE_ID: z.string().optional(),
+  SUPABASE_URL: z.string().url().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
   ALLOWED_EXTENSION_ORIGINS: z.string().optional(),
 });

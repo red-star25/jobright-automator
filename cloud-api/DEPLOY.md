@@ -60,7 +60,8 @@ DATABASE_URL="postgresql://..." npm run migrate
 | `DEV_AUTH_TOKEN`    | Strong random token (extension auth until sign-in) |
 | `DEV_USER_PLAN`     | `free`                                              |
 | `PORT`              | Leave unset (Railway injects it)                    |
-| `SUPABASE_JWT_SECRET` | Optional — Supabase project JWT secret (Settings → API) |
+| `SUPABASE_URL` | Optional — Supabase project URL (for ES256 JWT verification via JWKS) |
+| `SUPABASE_JWT_SECRET` | Optional — Legacy HS256 JWT secret only (Settings → JWT Keys → Legacy JWT Secret) |
 | `STRIPE_SECRET_KEY` | Optional — Stripe secret key (`sk_live_...` or test) |
 | `STRIPE_WEBHOOK_SECRET` | Optional — from Stripe webhook endpoint |
 | `STRIPE_PRO_PRICE_ID` | Optional — Stripe Price ID for Pro subscription |
@@ -130,7 +131,10 @@ To accept Supabase sign-in tokens from the `web/` dashboard, add:
 
 | Variable | Where to find it |
 | -------- | ---------------- |
-| `SUPABASE_JWT_SECRET` | Supabase → Project Settings → API → JWT Secret |
+| `SUPABASE_URL` | Supabase → Project Settings → **API** → Project URL (e.g. `https://xxx.supabase.co`) |
+| `SUPABASE_JWT_SECRET` | Optional fallback — **JWT Keys** tab → **Legacy JWT Secret** (only if tokens are still HS256) |
+
+**Do not** use the Publishable or Secret API keys here. After Supabase key rotation to **ECC (P-256)**, new access tokens are **ES256** — set `SUPABASE_URL` so cloud-api verifies via JWKS.
 
 ### Stripe Pro checkout
 
