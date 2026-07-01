@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const extRedirect = request.nextUrl.searchParams.get("redirect");
   if (!extRedirect) {
@@ -15,7 +17,7 @@ export async function GET(request: NextRequest) {
     sameSite: "lax",
     maxAge: 600,
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: request.nextUrl.protocol === "https:",
   });
   return response;
 }

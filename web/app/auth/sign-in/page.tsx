@@ -7,7 +7,7 @@ import {
   extensionCallbackUrl,
   saveExtensionRedirect,
 } from "@/lib/auth/extension-redirect";
-import { createBrowserClient } from "@/lib/supabase/client";
+import { createBrowserClient, createExtensionOAuthClient } from "@/lib/supabase/client";
 
 function SignInForm() {
   const searchParams = useSearchParams();
@@ -28,7 +28,7 @@ function SignInForm() {
   async function signInWithGoogle() {
     setLoading(true);
     setMessage("");
-    const supabase = createBrowserClient();
+    const supabase = extRedirect ? createExtensionOAuthClient() : createBrowserClient();
     if (!extRedirect) await supabase.auth.signOut();
     if (extRedirect) saveExtensionRedirect(extRedirect);
 
@@ -49,7 +49,7 @@ function SignInForm() {
     e.preventDefault();
     setLoading(true);
     setMessage("");
-    const supabase = createBrowserClient();
+    const supabase = extRedirect ? createExtensionOAuthClient() : createBrowserClient();
     if (!extRedirect) await supabase.auth.signOut();
     if (extRedirect) saveExtensionRedirect(extRedirect);
 
