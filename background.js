@@ -13,6 +13,110 @@ function cleanAiText(text) {
     .trim();
 }
 
+
+
+async function callOpenAiChat(apiKey, requestBody) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  let json = null;
+  try {
+    json = await response.json();
+  } catch (_) {
+    // Leave json as null; handled below.
+  }
+
+  if (!response.ok) {
+    const message = json?.error?.message || `OpenAI request failed with status ${response.status}`;
+    const err = new Error(message);
+    err.status = response.status;
+    err.response = json;
+    throw err;
+  }
+
+  return json || {};
+}
+
+// Backwards-compatible alias in case any older code path calls this spelling.
+const callOpenAIChat = callOpenAiChat;
+
+function containsUnsupportedPlaceholder(text) {
+  const value = String(text || "");
+  return /\b(?:XYZ\s*(?:Corp|Inc|Company)?|ABC\s*(?:Corp|Inc|Company)?|Acme\s*(?:Corp|Inc|Company)?|Example\s*(?:Corp|Inc|Company)?|Company\s*Name|Project\s*Name)\b/i.test(value);
+}
+
+function simpleHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function debugConsole(enabled, ...args) {
+  if (enabled) console.log(...args);
+}
+
+function warnConsole(enabled, ...args) {
+  if (enabled) console.warn(...args);
+}
+
+function errorConsole(enabled, ...args) {
+  if (enabled) console.error(...args);
+}
+
+function buildAiCacheKey({ mode, channel, tone, originalText, job, resumeText, customInstructions, userName }) {
+  const normalized = {
+    mode,
+    channel,
+    tone,
+    originalText: cleanAiText(originalText),
+    personName: cleanAiText(job.personName || ""),
+    company: cleanAiText(job.company || ""),
+    jobTitle: cleanAiText(job.jobTitle || ""),
+    category: cleanAiText(job.category || ""),
+    responsibilities: job.responsibilities || [],
+    requiredQualifications: job.requiredQualifications || [],
+    preferredQualifications: job.preferredQualifications || [],
+    matchedSkills: job.matchedSkills || [],
+    resumeHash: mode === "pro" ? simpleHash(cleanAiText(resumeText || "")) : "",
+    customInstructions: cleanAiText(customInstructions || ""),
+    userName: cleanAiText(userName || ""),
+  };
+  return "ai::" + simpleHash(JSON.stringify(normalized));
+}
+
+function getCachedAiResponse(cacheKey) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("aiResponseCache", (data) => {
+      const cache = data.aiResponseCache || {};
+      const hit = cache[cacheKey];
+      if (hit && Date.now() - (hit.createdAt || 0) < 1000 * 60 * 60 * 24 * 14) {
+        resolve(hit.response || null);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+function setCachedAiResponse(cacheKey, response) {
+  chrome.storage.local.get("aiResponseCache", (data) => {
+    const cache = data.aiResponseCache || {};
+    cache[cacheKey] = { createdAt: Date.now(), response };
+    const entries = Object.entries(cache).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0)).slice(0, 250);
+    chrome.storage.local.set({ aiResponseCache: Object.fromEntries(entries) });
+  });
+}
+
 function aiTextLooksReadable(text) {
   const sample = cleanAiText(text);
   if (sample.length < 250) return false;
@@ -47,18 +151,24 @@ function outreachEntryKeys(entry) {
 }
 
 function addOutreachEntry(entry) {
-  chrome.storage.local.get("outreachLog", (data) => {
+  chrome.storage.local.get(["outreachLog", "outreachIndex"], (data) => {
     const log = data.outreachLog || [];
-    const newKeys = new Set(outreachEntryKeys(entry));
-    const alreadyLogged = log.some((existing) => outreachEntryKeys(existing).some((key) => newKeys.has(key)));
+    const index = data.outreachIndex || {};
+    const newKeys = outreachEntryKeys(entry);
+    const alreadyLogged = newKeys.some((key) => index[key]) ||
+      log.some((existing) => outreachEntryKeys(existing).some((key) => newKeys.includes(key)));
     if (alreadyLogged) return;
-    log.push({
+
+    const nextEntry = {
       id: Date.now() + "_" + Math.random().toString(36).slice(2, 8),
       date: Date.now(),
       status: "sent",
       ...entry,
-    });
-    chrome.storage.local.set({ outreachLog: log.slice(-3000) });
+    };
+    log.push(nextEntry);
+    newKeys.forEach((key) => { index[key] = nextEntry.id; });
+
+    chrome.storage.local.set({ outreachLog: log.slice(-3000), outreachIndex: index });
   });
 }
 
@@ -149,7 +259,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
   if (message.type === "AI_PERSONALIZE") {
-    chrome.storage.local.get(["openaiApiKey", "defaultTone", "userName", "aiResumeText", "aiCustomInstructions"], async (data) => {
+    chrome.storage.local.get(["openaiApiKey", "defaultTone", "userName", "aiResumeText", "aiCustomInstructions", "debugLogging", "aiResponseCache"], async (data) => {
       try {
         const apiKey = data.openaiApiKey;
         if (!apiKey) {
@@ -167,8 +277,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const resumeLooksReadable = mode !== "pro" || aiTextLooksReadable(resumeText);
         const userName = data.userName || payload.userName || "";
         const customInstructions = cleanAiText(data.aiCustomInstructions || payload.customInstructions || "");
+        const debugLogging = !!data.debugLogging;
+        const cacheKey = buildAiCacheKey({ mode, channel, tone, originalText, job, resumeText, customInstructions, userName });
+        const cached = await getCachedAiResponse(cacheKey);
+        if (cached) {
+          debugConsole(debugLogging, "[InsiderReach AI] Cache hit", { mode, channel, tone, cacheKey });
+          sendResponse({ ...cached, cached: true });
+          return;
+        }
 
-        console.log("[InsiderReach AI] Request", {
+        debugConsole(debugLogging, "[InsiderReach AI] Request", {
           mode,
           channel,
           tone,
@@ -238,7 +356,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           json = await callOpenAiChat(apiKey, requestBody);
         } catch (apiErr) {
-          console.warn("[InsiderReach AI] OpenAI request failed", { status: apiErr.status, message: apiErr.message });
+          warnConsole(debugLogging, "[InsiderReach AI] OpenAI request failed", { status: apiErr.status, message: apiErr.message });
           sendResponse({ ok: false, error: apiErr.message });
           return;
         }
@@ -252,7 +370,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           proofPoint = /^(none|n\/a|not found)$/i.test(proofPoint) ? "" : proofPoint;
         }
         if (containsUnsupportedPlaceholder(text) || containsUnsupportedPlaceholder(proofPoint)) {
-          console.warn("[InsiderReach AI] Placeholder detected; requesting one revision without invented details.");
+          warnConsole(debugLogging, "[InsiderReach AI] Placeholder detected; requesting one revision without invented details.");
           const reviseBody = {
             model: "gpt-4o-mini",
             temperature: 0.15,
@@ -274,7 +392,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               proofPoint = /^(none|n\/a|not found)$/i.test(proofPoint) ? "" : proofPoint;
             }
           } catch (retryErr) {
-            console.warn("[InsiderReach AI] Placeholder revision failed", { message: retryErr.message });
+            warnConsole(debugLogging, "[InsiderReach AI] Placeholder revision failed", { message: retryErr.message });
           }
         }
 
@@ -283,10 +401,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        console.log("[InsiderReach AI] Response received", { outputChars: text.length, proofPoint: proofPoint ? proofPoint.slice(0, 120) : "" });
-        sendResponse({ ok: true, text, proofPoint });
+        debugConsole(debugLogging, "[InsiderReach AI] Response received", { outputChars: text.length, proofPoint: proofPoint ? proofPoint.slice(0, 120) : "", cacheKey });
+        const response = { ok: true, text, proofPoint };
+        setCachedAiResponse(cacheKey, response);
+        sendResponse(response);
       } catch (err) {
-        console.error("[InsiderReach AI] Request error", err);
+        errorConsole(!!(data && data.debugLogging), "[InsiderReach AI] Request error", err);
         sendResponse({ ok: false, error: err.message || String(err) });
       }
     });

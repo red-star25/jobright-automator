@@ -58,6 +58,8 @@
     .save-row button { padding: 7px 12px; border-radius: 6px; border: 1px solid #ccc; background: #2fa86f; color: white; cursor: pointer; }
     .small-note { font-size: 12px; color: #666; line-height: 1.4; }
     #aiStatus { font-size: 12px; color: #2fa86f; }
+    .check-row { display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:13px; }
+    .check-row input { width:auto; }
   </style>
 </head>
 <body>
@@ -67,7 +69,7 @@
     Set one as default, it will be pre-selected in the popup unless you change it.
   </p>
   <input type="file" id="fileInput" accept="application/pdf,.pdf,text/plain,.txt,.md" multiple />
-  <div id="list"></div>
+  <p id="uploadStatus" class="small-note"></p>
 
 
   <div class="section">
@@ -114,6 +116,9 @@
     <label for="resumeText">Resume text for Rewrite Pro</label>
     <textarea id="resumeText" placeholder="This auto-fills when PDF text extraction works. You can also paste your resume text here for better Rewrite Pro results."></textarea>
     <p class="small-note"><strong>Important:</strong> many PDFs store text in compressed/font-encoded form, so browser-only extraction can produce unreadable symbols. If this box has gibberish, paste your clean resume text manually here, or upload a .txt version of your resume. Rewrite Pro will now refuse to run if this text is missing or unreadable.</p>
+
+    <label class="check-row"><input type="checkbox" id="debugLogging" /> Enable debug console logs</label>
+    <p class="small-note">Keep this off for normal runs. Turn it on only when troubleshooting; status updates still appear in the popup either way.</p>
 
     <div class="save-row">
       <button id="saveAiBtn">Save AI settings</button>

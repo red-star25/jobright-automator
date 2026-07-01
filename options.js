@@ -1,6 +1,6 @@
 // options.js
 const fileInput = document.getElementById("fileInput");
-const list = document.getElementById("list");
+const uploadStatus = document.getElementById("uploadStatus");
 const runModeSelect = document.getElementById("runMode");
 const aiModeSelect = document.getElementById("aiMode");
 const openaiApiKeyInput = document.getElementById("openaiApiKey");
@@ -9,6 +9,7 @@ const userNameInput = document.getElementById("userName");
 const resumeTextInput = document.getElementById("resumeText");
 const customInstructionsInput = document.getElementById("customInstructions");
 const saveAiBtn = document.getElementById("saveAiBtn");
+const debugLoggingInput = document.getElementById("debugLogging");
 const aiStatus = document.getElementById("aiStatus");
 
 function readFileAsDataUrl(file) {
@@ -109,66 +110,20 @@ function readFileAsText(file) {
 function render() {
   chrome.storage.local.get(["resumes", "defaultResumeId"], (data) => {
     const resumes = data.resumes || [];
-    list.innerHTML = "";
-    resumes.forEach((r) => {
-      const row = document.createElement("div");
-      row.className = "row";
-
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "name";
-      nameSpan.textContent = r.name;
-      const qualityTag = document.createElement("span");
-      qualityTag.className = "default-tag";
-      qualityTag.style.color = r.text && resumeTextLooksReadable(r.text) ? "#2fa86f" : "#d9822b";
-      qualityTag.textContent = r.text && resumeTextLooksReadable(r.text) ? "TEXT OK" : "PASTE TEXT";
-      nameSpan.appendChild(qualityTag);
-      if (r.id === data.defaultResumeId) {
-        const tag = document.createElement("span");
-        tag.className = "default-tag";
-        tag.textContent = "DEFAULT";
-        nameSpan.appendChild(tag);
-      }
-      row.appendChild(nameSpan);
-
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      const setDefaultBtn = document.createElement("button");
-      setDefaultBtn.textContent = "Set default";
-      setDefaultBtn.onclick = () => {
-        const updates = { defaultResumeId: r.id };
-        if (r.text && !resumeTextInput.value.trim()) updates.aiResumeText = r.text;
-        chrome.storage.local.set(updates, () => { loadAiSettings(); render(); });
-      };
-      actions.appendChild(setDefaultBtn);
-
-      const useTextBtn = document.createElement("button");
-      useTextBtn.textContent = "Use text";
-      useTextBtn.title = "Use this resume's extracted text for Rewrite Pro";
-      useTextBtn.onclick = () => {
-        resumeTextInput.value = r.text || "";
-        saveAiSettings();
-      };
-      actions.appendChild(useTextBtn);
-
-      const removeBtn = document.createElement("button");
-      removeBtn.textContent = "Remove";
-      removeBtn.onclick = () => {
-        const next = resumes.filter((x) => x.id !== r.id);
-        const updates = { resumes: next };
-        if (data.defaultResumeId === r.id) updates.defaultResumeId = next[0] ? next[0].id : null;
-        chrome.storage.local.set(updates, render);
-      };
-      actions.appendChild(removeBtn);
-
-      row.appendChild(actions);
-      list.appendChild(row);
-    });
+    if (!uploadStatus) return;
+    if (!resumes.length) {
+      uploadStatus.textContent = "No resume uploaded yet.";
+      return;
+    }
+    const current = resumes.find((r) => r.id === data.defaultResumeId) || resumes[0];
+    const textLabel = current.text && resumeTextLooksReadable(current.text) ? "Resume text ready for Rewrite Pro." : "Resume uploaded. Paste clean resume text below for Rewrite Pro.";
+    uploadStatus.textContent = `Current resume: ${current.name}. ${textLabel}`;
   });
 }
 
+
 function loadAiSettings() {
-  chrome.storage.local.get(["runMode", "aiMode", "aiRewriteEnabled", "openaiApiKey", "defaultTone", "userName", "aiResumeText", "aiCustomInstructions"], (data) => {
+  chrome.storage.local.get(["runMode", "aiMode", "aiRewriteEnabled", "openaiApiKey", "defaultTone", "userName", "aiResumeText", "aiCustomInstructions", "debugLogging"], (data) => {
     runModeSelect.value = data.runMode || "both";
     aiModeSelect.value = data.aiMode || (data.aiRewriteEnabled === false ? "off" : "ask");
     openaiApiKeyInput.value = data.openaiApiKey || "";
@@ -176,6 +131,7 @@ function loadAiSettings() {
     userNameInput.value = data.userName || "";
     resumeTextInput.value = data.aiResumeText || "";
     customInstructionsInput.value = data.aiCustomInstructions || "";
+    debugLoggingInput.checked = !!data.debugLogging;
   });
 }
 
@@ -189,6 +145,7 @@ function saveAiSettings() {
     userName: userNameInput.value.trim(),
     aiResumeText: resumeTextInput.value.trim(),
     aiCustomInstructions: customInstructionsInput.value.trim(),
+    debugLogging: !!debugLoggingInput.checked,
   }, () => {
     aiStatus.textContent = "Saved.";
     setTimeout(() => { aiStatus.textContent = ""; }, 1800);

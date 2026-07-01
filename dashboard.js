@@ -79,7 +79,7 @@ function escapeHtml(str) {
 
 clearBtn.addEventListener("click", () => {
   if (!confirm("Clear the entire outreach log? This can't be undone.")) return;
-  chrome.storage.local.set({ outreachLog: [] }, render);
+  chrome.storage.local.set({ outreachLog: [], outreachIndex: {} }, render);
 });
 
 render();

@@ -132,8 +132,6 @@ It also includes an **AI Rewrite mode** selector:
 - **Auto Rewrite**: automatically rewrite the message, then show a preview.
 - **Auto Rewrite Pro**: automatically personalize with job + resume context, then show a preview.
 
-The popup also has recovery buttons: **Retry current**, **Skip current**, **Resume**, and **Stop**. These are meant for testing or when a page gets stuck waiting for Gmail/LinkedIn.
-
 ## Rewrite Pro details
 
 Rewrite Pro now extracts the Jobright job context from:
@@ -180,3 +178,20 @@ The LinkedIn script now ignores Connect buttons in recommendation/right-rail sec
 ## Stopping after completion
 
 After InsiderReach finishes all visible people on a Jobright job page, it marks that page as completed for the current tab and ignores another Start click on the same page. Refresh the page if you intentionally want to rerun the same job.
+
+
+## 0.2.8 performance update
+
+- Caches the Jobright job context once per run instead of re-reading responsibilities, qualifications, matched skills, company, and title for every person.
+- Caches the selected resume text once per run and passes it into Rewrite Pro directly.
+- Adds an AI response cache for repeated Rewrite/Rewrite Pro requests with the same person, job, tone, message, resume, and instructions.
+- Uses an indexed outreach lookup when saving log entries so duplicate checks scale better as the log grows.
+- Replaces some polling waits with MutationObserver-backed waits so popups are detected as soon as they render.
+- Adds a **Debug console logs** setting in Options. Keep it off for normal runs; turn it on only when troubleshooting.
+- Clearing the outreach log now also clears the duplicate-detection index.
+
+## Completion stop fix
+
+- Completed Jobright job pages are now remembered in Chrome storage, not only in the current tab session.
+- The completion key uses the canonical job URL so it does not change when company text is unavailable during rendering.
+- Clicking Start again on a completed job page stops immediately instead of reopening categories and re-checking every person.

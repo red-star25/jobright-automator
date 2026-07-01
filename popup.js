@@ -3,7 +3,7 @@ const resumeSelect = document.getElementById("resumeSelect");
 const startBtn = document.getElementById("startBtn");
 const optionsBtn = document.getElementById("optionsBtn");
 const dashboardBtn = document.getElementById("dashboardBtn");
-const statusBox = document.getElementById("status");
+const statusBox = document.getElementById("status"); // optional; popup logs are hidden in this build
 const statToday = document.getElementById("statToday");
 const statTotal = document.getElementById("statTotal");
 const statRate = document.getElementById("statRate");
@@ -82,13 +82,8 @@ function loadResumes() {
 }
 
 function renderStatus() {
-  chrome.storage.local.get("statusLog", (data) => {
-    const log = data.statusLog || [];
-    statusBox.textContent = log.length
-      ? log.map((l) => l.text).join("\n")
-      : "Idle.";
-    statusBox.scrollTop = statusBox.scrollHeight;
-  });
+  // Status logs are intentionally hidden from the popup UI.
+  // They are still stored internally for debugging when needed.
 }
 
 startBtn.addEventListener("click", () => {
@@ -96,7 +91,8 @@ startBtn.addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     if (!tab || !tab.url || !tab.url.includes("jobright.ai")) {
-      statusBox.textContent = "Open a Jobright job page first, then click Start.";
+      startBtn.textContent = "Open Jobright first";
+      setTimeout(() => { startBtn.textContent = "Preview + Start"; }, 1600);
       return;
     }
     chrome.storage.local.set({ statusLog: [], activeResumeId: resumeId, jobrightTabId: tab.id, runMode: runModeSelect.value, aiMode: aiModeSelect.value, aiRewriteEnabled: aiModeSelect.value !== "off" }, () => {
@@ -113,7 +109,5 @@ optionsBtn.addEventListener("click", () => {
 
 loadResumes();
 loadWorkflowSettings();
-renderStatus();
 renderOutreachStats();
-setInterval(renderStatus, 1000);
 setInterval(renderOutreachStats, 2000);

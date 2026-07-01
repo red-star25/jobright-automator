@@ -2,9 +2,20 @@
 // Runs on jobright.ai job pages. Listens for START_RUN from the popup,
 // then walks the Insider Connection list and processes each person.
 
+let debugLoggingEnabled = false;
+let cachedJobContextForRun = null;
+let cachedJobTitleForRun = "";
+let cachedAiResumeTextForRun = "";
+
 function log(text) {
-  console.log("[InsiderReach]", text);
+  if (debugLoggingEnabled) console.log("[InsiderReach]", text);
   chrome.runtime.sendMessage({ type: "LOG_STATUS", text });
+}
+
+function debugLog(text, data) {
+  if (!debugLoggingEnabled) return;
+  if (data !== undefined) console.log("[InsiderReach Debug]", text, data);
+  else console.log("[InsiderReach Debug]", text);
 }
 
 // Resolved by the PERSON_EMAIL_DONE message once the Gmail tab for the
@@ -78,10 +89,35 @@ function makeRunId(prefix = "run") {
 }
 
 function getCurrentJobRunKey() {
-  // Jobright is an SPA, so use the visible URL plus detected company. This
-  // prevents the content script from starting the same completed job page
-  // again in the same tab after every visible person has already been covered.
-  return `${location.origin}${location.pathname}${location.search}::${currentCompany || ""}`;
+  // Jobright is an SPA. Use the canonical visible job URL as the primary key,
+  // not the detected company, because company text can be unavailable while
+  // the section is closed or while the page is still rendering. A fluctuating
+  // company value made completed pages look "new" and caused reruns to scan
+  // the whole Insider Connection list again.
+  return `${location.origin}${location.pathname}${location.search}`;
+}
+
+async function isJobPageCompleted(runKey) {
+  const data = await new Promise((resolve) => {
+    chrome.storage.local.get(["completedJobPages"], resolve);
+  });
+  const completed = data.completedJobPages || {};
+  return !!completed[runKey];
+}
+
+async function markJobPageCompleted(runKey) {
+  const data = await new Promise((resolve) => {
+    chrome.storage.local.get(["completedJobPages"], resolve);
+  });
+  const completed = data.completedJobPages || {};
+  completed[runKey] = {
+    completedAt: new Date().toISOString(),
+    url: location.href,
+    company: currentCompany || "",
+  };
+  await new Promise((resolve) => {
+    chrome.storage.local.set({ completedJobPages: completed }, resolve);
+  });
 }
 
 function resolveLinkedinDone(runId) {
@@ -131,12 +167,14 @@ const AI_TONES = [
 ];
 
 function extractJobTitle() {
+  if (cachedJobTitleForRun) return cachedJobTitleForRun;
   const h1 = document.querySelector("h1");
-  if (h1 && visibleText(h1)) return visibleText(h1);
+  if (h1 && visibleText(h1)) { cachedJobTitleForRun = visibleText(h1); return cachedJobTitleForRun; }
   const titleLike = Array.from(document.querySelectorAll("[class*='job-title'], [class*='position']"))
     .map(visibleText)
     .find((t) => t && t.length > 5 && t.length < 140);
-  return titleLike || "";
+  cachedJobTitleForRun = titleLike || "";
+  return cachedJobTitleForRun;
 }
 
 
@@ -197,6 +235,7 @@ function extractMatchedSkills(section) {
 }
 
 function extractJobContextForAi() {
+  if (cachedJobContextForRun) return cachedJobContextForRun;
   const responsibilitiesSection = findJobrightSectionByTitle("Responsibilities");
   const qualificationSection = document.getElementById("skills-section") || findJobrightSectionByTitle("Qualification");
 
@@ -205,12 +244,13 @@ function extractJobContextForAi() {
   const preferredQualifications = extractQualificationGroup(qualificationSection, "Preferred");
   const matchedSkills = extractMatchedSkills(qualificationSection);
 
-  return {
+  cachedJobContextForRun = {
     responsibilities,
     requiredQualifications,
     preferredQualifications,
     matchedSkills,
   };
+  return cachedJobContextForRun;
 }
 
 function setTextareaValue(textarea, value) {
@@ -238,7 +278,7 @@ function sendAiRequest(payload) {
 
 async function showAiReviewPanel({ modal, channel, text, subject = "", personName = "", personTitle = "", category = "", onApply }) {
   const settings = await new Promise((resolve) => {
-    chrome.storage.local.get(["defaultTone", "openaiApiKey", "aiResumeText", "aiRewriteEnabled", "aiMode"], resolve);
+    chrome.storage.local.get(["defaultTone", "openaiApiKey", "aiRewriteEnabled", "aiMode"], resolve);
   });
 
   const aiMode = currentAiMode || settings.aiMode || (settings.aiRewriteEnabled === false ? "off" : "ask");
@@ -326,7 +366,7 @@ async function showAiReviewPanel({ modal, channel, text, subject = "", personNam
     status.textContent = mode === "pro" ? "Personalizing with job + resume..." : "Rewriting...";
     status.style.color = "#555";
     if (mode === "pro") {
-      log(`Rewrite Pro context: ${jobContext.responsibilities.length} responsibilities, ${jobContext.requiredQualifications.length} required, ${jobContext.preferredQualifications.length} preferred, ${jobContext.matchedSkills.length} matched skills.`);
+      debugLog(`Rewrite Pro context: ${jobContext.responsibilities.length} responsibilities, ${jobContext.requiredQualifications.length} required, ${jobContext.preferredQualifications.length} preferred, ${jobContext.matchedSkills.length} matched skills.`);
     }
     const res = await sendAiRequest({
       mode,
@@ -338,10 +378,11 @@ async function showAiReviewPanel({ modal, channel, text, subject = "", personNam
         personName,
         personTitle,
         company: currentCompany,
-        jobTitle: extractJobTitle(),
+        jobTitle: cachedJobTitleForRun || extractJobTitle(),
         category,
         ...jobContext,
       },
+      resumeText: mode === "pro" ? cachedAiResumeTextForRun : "",
     });
     if (!res.ok) {
       status.textContent = res.error || "AI rewrite failed.";
@@ -459,15 +500,44 @@ function extractCompanyName() {
   return match ? match[1].trim() : "";
 }
 
-// Polls until `check()` returns a truthy value, or times out.
-async function waitFor(check, { timeout = 6000, interval = 250 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const result = check();
-    if (result) return result;
-    await sleep(interval);
-  }
-  return null;
+// Waits until `check()` returns a truthy value. Uses MutationObserver so
+// it reacts as soon as Jobright/Gmail/LinkedIn renders the next popup, with a
+// light polling fallback for non-DOM state changes.
+async function waitFor(check, { timeout = 6000, interval = 250, root = document.body } = {}) {
+  const immediate = check();
+  if (immediate) return immediate;
+
+  return new Promise((resolve) => {
+    let done = false;
+    let observer = null;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      if (observer) observer.disconnect();
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      resolve(value || null);
+    };
+
+    const test = () => {
+      try {
+        const result = check();
+        if (result) finish(result);
+      } catch (err) {
+        debugLog("waitFor check failed", err && err.message ? err.message : String(err));
+      }
+    };
+
+    if (root) {
+      observer = new MutationObserver(test);
+      observer.observe(root, { childList: true, subtree: true, attributes: true });
+    }
+    pollTimer = setInterval(test, interval);
+    timeoutTimer = setTimeout(() => finish(null), timeout);
+  });
 }
 
 function visibleText(el) {
@@ -911,11 +981,27 @@ async function runAutomation(resumeId, options = {}) {
   currentRunMode = options.runMode || currentRunMode || "both";
   currentAiMode = options.aiMode || currentAiMode || "ask";
   currentCompany = extractCompanyName();
+  cachedJobContextForRun = null;
+  cachedJobTitleForRun = "";
+  cachedAiResumeTextForRun = "";
+  const runSettings = await new Promise((resolve) => {
+    chrome.storage.local.get(["debugLogging", "aiResumeText", "resumes", "activeResumeId"], resolve);
+  });
+  debugLoggingEnabled = !!runSettings.debugLogging;
+  cachedAiResumeTextForRun = String(runSettings.aiResumeText || "");
+  if (!cachedAiResumeTextForRun && runSettings.activeResumeId && Array.isArray(runSettings.resumes)) {
+    const selectedResume = runSettings.resumes.find((r) => r.id === runSettings.activeResumeId);
+    cachedAiResumeTextForRun = selectedResume && selectedResume.text ? String(selectedResume.text) : "";
+  }
+  cachedJobTitleForRun = extractJobTitle();
+  cachedJobContextForRun = extractJobContextForAi();
   activeRunKey = getCurrentJobRunKey();
 
   const completedKey = sessionStorage.getItem("insiderreachCompletedRunKey") || "";
-  if (completedKey && completedKey === activeRunKey && !options.forceRestart) {
-    log("This job page was already completed in this tab. Stopping instead of checking everyone again. Refresh the page if you intentionally want to rerun it.");
+  const completedInThisTab = completedKey && completedKey === activeRunKey;
+  const completedPersisted = await isJobPageCompleted(activeRunKey);
+  if ((completedInThisTab || completedPersisted) && !options.forceRestart) {
+    log("This job page was already completed. Stopping now instead of checking everyone again.");
     return;
   }
 
@@ -923,16 +1009,26 @@ async function runAutomation(resumeId, options = {}) {
   log(`Starting run on this job page. Mode: ${currentRunMode.replace("_", " ")}; AI: ${currentAiMode}.`);
   await loadContactedSet();
   if (currentCompany) log(`Detected company: ${currentCompany}`);
+  debugLog("Cached run context", {
+    jobTitle: cachedJobTitleForRun,
+    resumeChars: cachedAiResumeTextForRun.length,
+    responsibilities: cachedJobContextForRun.responsibilities.length,
+    required: cachedJobContextForRun.requiredQualifications.length,
+    preferred: cachedJobContextForRun.preferredQualifications.length,
+    matchedSkills: cachedJobContextForRun.matchedSkills.length,
+  });
 
   const container = findInsiderConnectionContainer();
   if (!container) {
     log("Could not find the Insider Connection section on this page. Scroll to it and try again.");
+    runInProgress = false;
     return;
   }
 
   const cards = getCategoryCards(container);
   if (!cards.length) {
     log("No connection categories found in this section.");
+    runInProgress = false;
     return;
   }
   log(`Found ${cards.length} connection categories.`);
@@ -1019,6 +1115,7 @@ async function runAutomation(resumeId, options = {}) {
   }
 
   sessionStorage.setItem("insiderreachCompletedRunKey", activeRunKey);
+  await markJobPageCompleted(activeRunKey);
   chrome.storage.local.remove(["pendingLinkedinJob", "pendingLinkedinClaimedTabId", "pendingGmailJob"], () => {});
   resolveBlockingWaits();
   runInProgress = false;

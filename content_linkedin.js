@@ -9,6 +9,12 @@
 // (light DOM, shadow roots, and starting from <html> not just <body>) to
 // deal with that.
 
+let debugLoggingEnabled = false;
+
+function debugLog(...args) {
+  if (debugLoggingEnabled) console.log(...args);
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -330,7 +336,7 @@ function isValidConnectCandidate(el, expectedName) {
   if (!looksConnect) return false;
   const inviteName = parseInviteNameFromAria(el);
   if (inviteName && expectedName && !namesLikelyMatch(inviteName, expectedName)) {
-    console.log("[InsiderReach] ignoring Connect button for a different profile", { expectedName, inviteName });
+    debugLog("[InsiderReach] ignoring Connect button for a different profile", { expectedName, inviteName });
     return false;
   }
   return true;
@@ -443,12 +449,14 @@ function setFrameworkValue(el, value) {
 }
 
 async function run() {
-  console.log("[InsiderReach] LinkedIn script started, checking for a pending job...");
+  const settings = await new Promise((resolve) => chrome.storage.local.get(["debugLogging"], resolve));
+  debugLoggingEnabled = !!settings.debugLogging;
+  debugLog("[InsiderReach] LinkedIn script started, checking for a pending job...");
   const job = await new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "GET_PENDING_LINKEDIN_JOB" }, resolve);
   });
   if (!job || !job.note) {
-    console.log("[InsiderReach] no pending LinkedIn job found for this page, doing nothing.");
+    debugLog("[InsiderReach] no pending LinkedIn job found for this page, doing nothing.");
     return;
   }
 
@@ -461,7 +469,7 @@ async function run() {
   savePendingLinkedinJob(job);
 
   const log = (text) => {
-    console.log("[InsiderReach]", `${job.personName}: ${text}`);
+    debugLog("[InsiderReach]", `${job.personName}: ${text}`);
     chrome.runtime.sendMessage({ type: "LOG_STATUS", text: `${job.personName}: ${text}` });
   };
 
