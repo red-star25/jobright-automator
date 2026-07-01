@@ -43,6 +43,10 @@ npm run build && npm start   # production
 
 Default port: **8080**
 
+## Production deploy
+
+See **[DEPLOY.md](./DEPLOY.md)** for the recommended **Neon (free Postgres) + Railway (~$5/mo API)** setup.
+
 ## Endpoints
 
 | Method | Path | Auth | Description |

@@ -1,10 +1,13 @@
 // InsiderReach API configuration.
 // API_BASE = cloud-api (rewrite, usage, /v1/me)
 // WEB_APP_BASE = Next.js dashboard (sign-in, billing) — optional for local dev
+//
+// LOCAL DEV: keep API_BASE on localhost:8080
+// PRODUCTION: set API_BASE to your Railway URL (see cloud-api/DEPLOY.md)
 const INSIDERREACH_CONFIG = {
   API_BASE: "http://localhost:8080",
   WEB_APP_BASE: "http://localhost:3000",
-  PRODUCTION_API_BASE: "https://api.insiderreach.com",
+  PRODUCTION_API_BASE: "https://YOUR-RAILWAY-APP.up.railway.app",
   PRODUCTION_WEB_APP_BASE: "https://app.insiderreach.com",
 };
 
