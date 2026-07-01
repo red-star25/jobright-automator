@@ -112,10 +112,20 @@ const INSIDERREACH_CONFIG = {
 
 | Issue                               | Fix                                                                     |
 | ----------------------------------- | ----------------------------------------------------------------------- |
+| **Healthcheck failure** on deploy   | See checklist below — usually missing env vars, wrong `PORT`, or bad `DATABASE_URL` |
 | `Failed to start server` on Railway | Check `DATABASE_URL` and Neon IP allowlist (Neon allows all by default) |
 | Extension 401                       | Token in Options must match Railway `DEV_AUTH_TOKEN` exactly            |
 | Extension blocked fetch             | Add Railway URL to `manifest.json` host_permissions and reload          |
 | OpenAI 502                          | Verify `OPENAI_API_KEY` on Railway                                      |
+
+### Healthcheck failure checklist
+
+1. **Railway → Deployments → View logs** — look for `Missing or invalid environment variables` or `Database warmup failed`.
+2. **Do not set `PORT`** in Railway Variables (delete it if present). Railway injects `PORT` automatically; hardcoding `8080` breaks routing.
+3. **Required variables** must all be set: `DATABASE_URL`, `OPENAI_API_KEY`, `JWT_SECRET` (8+ chars), `DEV_AUTH_TOKEN` (8+ chars), `DEV_USER_PLAN`.
+4. **`DATABASE_URL`** — use Neon’s **pooled** connection string with `?sslmode=require` appended.
+5. Run migration once from your laptop (Step 1) before or after first deploy: `DATABASE_URL="..." npm run migrate`.
+6. After redeploy, verify: `curl https://YOUR-RAILWAY-DOMAIN/health`
 
 
 ---

@@ -14,7 +14,15 @@ const envSchema = z.object({
   ALLOWED_EXTENSION_ORIGINS: z.string().optional(),
 });
 
-export const env = envSchema.parse(process.env);
+const parsed = envSchema.safeParse(process.env);
+if (!parsed.success) {
+  console.error("Missing or invalid environment variables:");
+  for (const [key, errors] of Object.entries(parsed.error.flatten().fieldErrors)) {
+    console.error(`  ${key}: ${errors?.join(", ")}`);
+  }
+  process.exit(1);
+}
+export const env = parsed.data;
 
 export const DEV_USER_ID = "00000000-0000-4000-8000-000000000001";
 

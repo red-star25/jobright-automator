@@ -9,10 +9,11 @@ RUN npm run build
 
 FROM node:22-alpine
 WORKDIR /app
+RUN apk add --no-cache ca-certificates
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
 EXPOSE 8080
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
+CMD ["node", "dist/index.js"]
