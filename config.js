@@ -6,9 +6,9 @@
 // PRODUCTION: set API_BASE to your Railway URL (see cloud-api/DEPLOY.md)
 const INSIDERREACH_CONFIG = {
   API_BASE: "https://jobright-automator-production.up.railway.app",
-  WEB_APP_BASE: "http://localhost:3000",
+  WEB_APP_BASE: "https://web-gamma-silk-53.vercel.app",
   PRODUCTION_API_BASE: "https://jobright-automator-production.up.railway.app",
-  PRODUCTION_WEB_APP_BASE: "https://app.insiderreach.com",
+  PRODUCTION_WEB_APP_BASE: "https://web-gamma-silk-53.vercel.app",
 };
 
 function getApiBase() {

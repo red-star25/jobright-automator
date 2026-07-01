@@ -102,6 +102,22 @@ const INSIDERREACH_CONFIG = {
 
 ---
 
+## Step 3b — Deploy web dashboard (Vercel)
+
+Extension sign-in opens `WEB_APP_BASE` in [`config.js`](../config.js). Deploy the Next.js app in [`web/`](../web/) and point the extension at the live URL.
+
+See **[web/DEPLOY.md](../web/DEPLOY.md)** — quick start:
+
+```bash
+cd web
+npx vercel login
+npm run deploy
+```
+
+Then update `WEB_APP_BASE` in `config.js`, add the URL to `manifest.json` `host_permissions`, and set Railway `PUBLIC_APP_URL`.
+
+---
+
 ## Step 4 — JWT sessions + Stripe (optional)
 
 After the API is live, enable production auth and billing:
