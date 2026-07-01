@@ -3,6 +3,7 @@ const fileInput = document.getElementById("fileInput");
 const uploadStatus = document.getElementById("uploadStatus");
 const runModeSelect = document.getElementById("runMode");
 const aiModeSelect = document.getElementById("aiMode");
+const aiProviderSelect = document.getElementById("aiProvider");
 const openaiApiKeyInput = document.getElementById("openaiApiKey");
 const defaultToneSelect = document.getElementById("defaultTone");
 const userNameInput = document.getElementById("userName");
@@ -11,6 +12,14 @@ const customInstructionsInput = document.getElementById("customInstructions");
 const saveAiBtn = document.getElementById("saveAiBtn");
 const debugLoggingInput = document.getElementById("debugLogging");
 const aiStatus = document.getElementById("aiStatus");
+const accountSummary = document.getElementById("accountSummary");
+const usageSummary = document.getElementById("usageSummary");
+const accountStatus = document.getElementById("accountStatus");
+const signInBtn = document.getElementById("signInBtn");
+const signOutBtn = document.getElementById("signOutBtn");
+const upgradeLink = document.getElementById("upgradeLink");
+const localKeySection = document.getElementById("localKeySection");
+const cloudApiTokenInput = document.getElementById("cloudApiToken");
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -55,7 +64,6 @@ function resumeTextLooksReadable(text) {
   const englishWords = sample.match(/\b[A-Za-z][A-Za-z+.#-]{2,}\b/g) || [];
   if (englishWords.length < 45) return false;
 
-  // If the PDF parser produced mostly binary/control/glyph junk, do not save it.
   const readableChars = sample.match(/[A-Za-z0-9\s.,;:()@/+&_'’\-#]/g) || [];
   const readableRatio = readableChars.length / sample.length;
   if (readableRatio < 0.82) return false;
@@ -71,8 +79,6 @@ function bestEffortExtractPdfText(arrayBuffer) {
 
   const chunks = [];
 
-  // Common uncompressed PDF literal strings: (text) Tj / [(text) ...] TJ.
-  // Many resumes are compressed or font-encoded, so this may return nothing useful.
   const literalRe = /\((?:\\.|[^\\()]){2,}\)/g;
   let match;
   while ((match = literalRe.exec(raw))) {
@@ -80,7 +86,6 @@ function bestEffortExtractPdfText(arrayBuffer) {
     if (/[A-Za-z]{2,}/.test(text)) chunks.push(text);
   }
 
-  // UTF-16BE hex strings sometimes appear as <00480069>.
   const hexRe = /<([0-9A-Fa-f]{8,})>/g;
   while ((match = hexRe.exec(raw))) {
     const hex = match[1];
@@ -107,6 +112,75 @@ function readFileAsText(file) {
   });
 }
 
+function renderUsageBars(cloudUsage) {
+  if (!usageSummary) return;
+  if (!cloudUsage || !cloudUsage.limits) {
+    usageSummary.innerHTML = "";
+    return;
+  }
+  const rewritePct = cloudUsage.limits.rewrite
+    ? Math.min(100, Math.round((cloudUsage.usage.rewrite / cloudUsage.limits.rewrite) * 100))
+    : 0;
+  const proPct = cloudUsage.limits.pro
+    ? Math.min(100, Math.round((cloudUsage.usage.pro / cloudUsage.limits.pro) * 100))
+    : 0;
+  usageSummary.innerHTML = `
+    <p class="small-note" style="margin-top:10px;"><strong>Rewrite:</strong> ${cloudUsage.usage.rewrite}/${cloudUsage.limits.rewrite}</p>
+    <div class="usage-bar"><span style="width:${rewritePct}%"></span></div>
+    <p class="small-note" style="margin-top:10px;"><strong>Rewrite Pro:</strong> ${cloudUsage.usage.pro}/${cloudUsage.limits.pro}</p>
+    <div class="usage-bar"><span style="width:${proPct}%"></span></div>
+  `;
+}
+
+async function refreshAccountUi() {
+  const data = await new Promise((resolve) => {
+    chrome.storage.local.get(["authSession", "cloudUsage", "aiProvider", "cloudApiToken"], resolve);
+  });
+
+  const session = data.authSession;
+  const cloudUsage = data.cloudUsage;
+  const cloudApiToken = String(data.cloudApiToken || "").trim();
+  const apiBase = typeof getApiBase === "function" ? getApiBase() : "http://localhost:8080";
+  const webBase = typeof getWebAppBase === "function" ? getWebAppBase() : "http://localhost:3000";
+  if (upgradeLink) upgradeLink.href = `${webBase}/dashboard`;
+
+  if (cloudApiToken) {
+    accountSummary.textContent = "Using Cloud API token (local dev).";
+    signInBtn.style.display = "inline-block";
+    signOutBtn.style.display = session?.access_token ? "inline-block" : "none";
+  } else if (session && session.email) {
+    accountSummary.textContent = `Signed in as ${session.email}`;
+    signInBtn.style.display = "none";
+    signOutBtn.style.display = "inline-block";
+  } else if (session && session.access_token) {
+    accountSummary.textContent = "Signed in to Cloud AI.";
+    signInBtn.style.display = "none";
+    signOutBtn.style.display = "inline-block";
+  } else {
+    accountSummary.textContent = "Not signed in.";
+    signInBtn.style.display = "inline-block";
+    signOutBtn.style.display = "none";
+    usageSummary.innerHTML = "";
+  }
+
+  const hasCloudAuth = cloudApiToken || (session && session.access_token);
+  if (hasCloudAuth && typeof fetchCloudMe === "function") {
+    const me = await fetchCloudMe();
+    if (me) renderUsageBars(me);
+    else renderUsageBars(cloudUsage);
+  } else {
+    renderUsageBars(cloudUsage);
+  }
+
+  updateProviderUi(data.aiProvider || "local");
+}
+
+function updateProviderUi(provider) {
+  if (!localKeySection || !openaiApiKeyInput) return;
+  const isCloud = provider === "cloud";
+  localKeySection.style.display = isCloud ? "none" : "block";
+}
+
 function render() {
   chrome.storage.local.get(["resumes", "defaultResumeId"], (data) => {
     const resumes = data.resumes || [];
@@ -121,25 +195,45 @@ function render() {
   });
 }
 
-
 function loadAiSettings() {
-  chrome.storage.local.get(["runMode", "aiMode", "aiRewriteEnabled", "openaiApiKey", "defaultTone", "userName", "aiResumeText", "aiCustomInstructions", "debugLogging"], (data) => {
+  chrome.storage.local.get([
+    "runMode",
+    "aiMode",
+    "aiProvider",
+    "aiRewriteEnabled",
+    "cloudApiToken",
+    "openaiApiKey",
+    "defaultTone",
+    "userName",
+    "aiResumeText",
+    "aiCustomInstructions",
+    "debugLogging",
+  ], (data) => {
     runModeSelect.value = data.runMode || "both";
     aiModeSelect.value = data.aiMode || (data.aiRewriteEnabled === false ? "off" : "ask");
+    aiProviderSelect.value = data.aiProvider || "local";
+    if (cloudApiTokenInput) cloudApiTokenInput.value = data.cloudApiToken || "";
     openaiApiKeyInput.value = data.openaiApiKey || "";
     defaultToneSelect.value = data.defaultTone || "Professional";
     userNameInput.value = data.userName || "";
     resumeTextInput.value = data.aiResumeText || "";
     customInstructionsInput.value = data.aiCustomInstructions || "";
     debugLoggingInput.checked = !!data.debugLogging;
+    updateProviderUi(aiProviderSelect.value);
   });
 }
 
 function saveAiSettings() {
+  const cloudToken = cloudApiTokenInput ? cloudApiTokenInput.value.trim() : "";
+  const provider = cloudToken ? "cloud" : aiProviderSelect.value;
+  if (cloudToken) aiProviderSelect.value = "cloud";
+
   chrome.storage.local.set({
     runMode: runModeSelect.value,
     aiMode: aiModeSelect.value,
+    aiProvider: provider,
     aiRewriteEnabled: aiModeSelect.value !== "off",
+    cloudApiToken: cloudToken,
     openaiApiKey: openaiApiKeyInput.value.trim(),
     defaultTone: defaultToneSelect.value,
     userName: userNameInput.value.trim(),
@@ -149,8 +243,36 @@ function saveAiSettings() {
   }, () => {
     aiStatus.textContent = "Saved.";
     setTimeout(() => { aiStatus.textContent = ""; }, 1800);
+    updateProviderUi(provider);
+    refreshAccountUi();
   });
 }
+
+if (cloudApiTokenInput) {
+  cloudApiTokenInput.addEventListener("change", saveAiSettings);
+}
+
+signInBtn.addEventListener("click", async () => {
+  accountStatus.textContent = "Opening sign in...";
+  try {
+    await signInWithCloudAi();
+    accountStatus.textContent = "Signed in.";
+    await refreshAccountUi();
+  } catch (err) {
+    accountStatus.textContent = err.message || String(err);
+  }
+});
+
+signOutBtn.addEventListener("click", async () => {
+  await signOutCloudAi();
+  accountStatus.textContent = "Signed out.";
+  await refreshAccountUi();
+});
+
+aiProviderSelect.addEventListener("change", () => {
+  updateProviderUi(aiProviderSelect.value);
+  saveAiSettings();
+});
 
 fileInput.addEventListener("change", async (e) => {
   const files = Array.from(e.target.files || []);
@@ -195,3 +317,4 @@ aiModeSelect.addEventListener("change", saveAiSettings);
 saveAiBtn.addEventListener("click", saveAiSettings);
 loadAiSettings();
 render();
+refreshAccountUi();

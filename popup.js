@@ -10,8 +10,39 @@ const statRate = document.getElementById("statRate");
 const runModeSelect = document.getElementById("runModeSelect");
 const aiModeSelect = document.getElementById("aiModeSelect");
 const aiModeHint = document.getElementById("aiModeHint");
+const accountStripText = document.getElementById("accountStripText");
 
+function renderAccountStrip() {
+  chrome.storage.local.get(["aiProvider", "authSession", "cloudUsage", "cloudApiToken"], async (data) => {
+    const provider = data.aiProvider || "local";
+    if (provider !== "cloud") {
+      accountStripText.textContent = "Using Local AI. Sign in via Manage resumes > Account for Cloud AI.";
+      return;
+    }
 
+    const session = data.authSession;
+    const cloudApiToken = String(data.cloudApiToken || "").trim();
+    if (!cloudApiToken && (!session || !session.access_token)) {
+      accountStripText.textContent = "Cloud AI selected. Add a Cloud API token or sign in from Manage resumes > Account.";
+      return;
+    }
+
+    let usage = data.cloudUsage;
+    if (typeof fetchCloudMe === "function") {
+      const fresh = await fetchCloudMe();
+      if (fresh) usage = fresh;
+    }
+
+    const email = usage?.email || session.email || "Signed in";
+    if (usage?.limits) {
+      const rewriteLeft = Math.max(0, usage.limits.rewrite - (usage.usage?.rewrite || 0));
+      const proLeft = Math.max(0, usage.limits.pro - (usage.usage?.pro || 0));
+      accountStripText.textContent = `${email} · ${rewriteLeft} Rewrite · ${proLeft} Pro left this month (${usage.plan || "free"} plan)`;
+    } else {
+      accountStripText.textContent = `${email} · Cloud AI active`;
+    }
+  });
+}
 
 function aiModeText(mode) {
   if (mode === "off") return "Skip AI and use Jobright's original text.";
@@ -110,4 +141,6 @@ optionsBtn.addEventListener("click", () => {
 loadResumes();
 loadWorkflowSettings();
 renderOutreachStats();
+renderAccountStrip();
 setInterval(renderOutreachStats, 2000);
+setInterval(renderAccountStrip, 5000);

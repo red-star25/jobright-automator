@@ -361,7 +361,10 @@ async function showAiReviewPanel({ modal, channel, text, subject = "", personNam
   preview.addEventListener("input", updateCount);
   updateCount();
 
+  let lastAiMode = "rewrite";
+
   async function runAi(mode) {
+    lastAiMode = mode;
     const jobContext = extractJobContextForAi();
     status.textContent = mode === "pro" ? "Personalizing with job + resume..." : "Rewriting...";
     status.style.color = "#555";
@@ -420,6 +423,14 @@ async function showAiReviewPanel({ modal, channel, text, subject = "", personNam
     panel.querySelector(".ir-use-original").addEventListener("click", () => finish(text || "", true));
     panel.querySelector(".ir-use").addEventListener("click", () => {
       const selected = preview.value.trim() || text || "";
+      chrome.runtime.sendMessage({
+        type: "LOG_CLOUD_USAGE_EVENT",
+        payload: {
+          eventType: "rewrite_accepted",
+          mode: lastAiMode === "pro" ? "rewritePro" : "rewrite",
+          channel,
+        },
+      }).catch(() => {});
       finish(selected, true);
     });
   });

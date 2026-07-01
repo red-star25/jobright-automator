@@ -120,6 +120,17 @@
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
+    #accountStrip {
+      background: #f7fffb;
+      border: 1px solid #d8f2e5;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: #444;
+      line-height: 1.4;
+    }
+    #accountStrip strong { display: block; font-size: 12px; color: #1a1a1a; }
   </style>
 </head>
 <body>
@@ -128,6 +139,8 @@
     <h1>InsiderReach</h1>
   </div>
   <div class="hint">Referral outreach, faster. Open a Jobright job page with an Insider Connection list, pick a resume, then hit Start.</div>
+
+  <div id="accountStrip"><strong>Cloud AI</strong><span id="accountStripText">Loading account...</span></div>
 
   <label for="resumeSelect" style="font-size:12px;">Resume to attach</label>
   <select id="resumeSelect"></select>
@@ -159,6 +172,8 @@
   <button id="dashboardBtn" class="secondary">View outreach log</button>
 
 
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
