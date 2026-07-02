@@ -278,7 +278,29 @@ function handleGmailSendDetected(sender) {
   });
 }
 
-function handleLinkedinSendDetected(sender) {
+function linkedinNameFromProfileUrl(url) {
+  const match = String(url || "").match(/\/in\/([^/?#]+)/i);
+  if (!match) return "";
+  let parts = match[1].split("-").filter((p) => p && !/^\d+$/.test(p) && p.length > 1);
+  const credentials = new Set(["shrm", "scp", "phd", "mba", "cpa", "rn", "md", "jd", "pe", "pmp", "cpnp", "ms", "ma", "bs", "ba"]);
+  while (parts.length && /^[a-z0-9]{5,}$/i.test(parts[parts.length - 1])) parts.pop();
+  while (parts.length > 2 && credentials.has(parts[parts.length - 1].toLowerCase())) parts.pop();
+  if (parts.length < 1 || parts.length > 5) return "";
+  return parts.slice(0, 4).map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+}
+
+function resolveLinkedinOutreachName(job) {
+  const raw = String(job?.personName || "").replace(/\s+/g, " ").trim();
+  if (raw && !/^(unknown|ad options|options)$/i.test(raw) && raw.length > 2) return raw;
+  return linkedinNameFromProfileUrl(job?.profileUrl || job?.linkedinUrl || "") || raw || "Unknown";
+}
+
+function handleLinkedinSendDetected(sender, reason = "sent") {
+  if (reason !== "sent") {
+    console.log("[InsiderReach] Ignoring LinkedIn completion signal with reason:", reason);
+    return;
+  }
+
   chrome.storage.local.get(["jobrightTabId", "pendingLinkedinJob", "pendingLinkedinClaimedTabId"], (data) => {
     const job = data.pendingLinkedinJob;
     const senderTabId = sender.tab?.id;
@@ -289,7 +311,7 @@ function handleLinkedinSendDetected(sender) {
 
     if (job) {
       addOutreachEntry({
-        name: job.personName,
+        name: resolveLinkedinOutreachName(job),
         company: job.company || "",
         channel: "linkedin",
         identifier: job.profileUrl || job.personName,
@@ -301,12 +323,38 @@ function handleLinkedinSendDetected(sender) {
     chrome.storage.local.set({
       lastLinkedinDoneRunId: doneRunId,
       lastLinkedinDoneAt: Date.now(),
+      lastLinkedinDoneReason: "sent",
     }, () => {
       chrome.storage.local.remove(["pendingLinkedinJob", "pendingLinkedinClaimedTabId"], () => {
         if (data.jobrightTabId) {
           chrome.tabs.sendMessage(data.jobrightTabId, {
             type: "PERSON_LINKEDIN_DONE",
             runId: doneRunId,
+            reason: "sent",
+          }).catch(() => {});
+        }
+        if (senderTabId) setTimeout(() => chrome.tabs.remove(senderTabId), 300);
+      });
+    });
+  });
+}
+
+function handleLinkedinStepSkipped(message = {}, sender) {
+  chrome.storage.local.get(["jobrightTabId", "pendingLinkedinJob"], (data) => {
+    const job = data.pendingLinkedinJob;
+    const doneRunId = job?.runId || null;
+    const senderTabId = sender?.tab?.id;
+    chrome.storage.local.set({
+      lastLinkedinDoneRunId: doneRunId,
+      lastLinkedinDoneAt: Date.now(),
+      lastLinkedinDoneReason: message.reason || "skipped",
+    }, () => {
+      chrome.storage.local.remove(["pendingLinkedinJob", "pendingLinkedinClaimedTabId"], () => {
+        if (data.jobrightTabId) {
+          chrome.tabs.sendMessage(data.jobrightTabId, {
+            type: "PERSON_LINKEDIN_DONE",
+            runId: doneRunId,
+            reason: message.reason || "skipped",
           }).catch(() => {});
         }
         if (senderTabId) setTimeout(() => chrome.tabs.remove(senderTabId), 300);
@@ -364,7 +412,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
 
     case "LINKEDIN_SEND_DETECTED":
-      handleLinkedinSendDetected(sender);
+      handleLinkedinSendDetected(sender, message.reason);
+      return false;
+
+    case "LINKEDIN_STEP_SKIPPED":
+      handleLinkedinStepSkipped(message, sender);
       return false;
 
     case "LOG_CLOUD_USAGE_EVENT":

@@ -18,6 +18,7 @@ let waitingForEmailDone = null;
 let waitingForLinkedinDone = null;
 let waitingForLinkedinRunId = null;
 let waitingForLinkedinPollTimer = null;
+let linkedinDoneReason = "sent";
 let stopRequested = false;
 let skipRequested = false;
 let retryRequested = false;
@@ -49,6 +50,7 @@ chrome.runtime.onMessage.addListener((message) => {
     waitingForEmailDone = null;
   }
   if (message.type === "PERSON_LINKEDIN_DONE") {
+    linkedinDoneReason = message.reason || "sent";
     resolveLinkedinDone(message.runId || null);
   }
   if (message.type === "STOP_RUN") {
@@ -137,9 +139,10 @@ function waitForLinkedinDone(runId) {
     // to storage, so polling keeps the main run moving after the LinkedIn tab
     // closes.
     waitingForLinkedinPollTimer = setInterval(() => {
-      chrome.storage.local.get(["lastLinkedinDoneRunId", "lastLinkedinDoneAt"], (data) => {
+      chrome.storage.local.get(["lastLinkedinDoneRunId", "lastLinkedinDoneAt", "lastLinkedinDoneReason"], (data) => {
         if (!waitingForLinkedinDone) return;
         if (data.lastLinkedinDoneRunId === runId) {
+          linkedinDoneReason = data.lastLinkedinDoneReason || "sent";
           resolveLinkedinDone(runId);
         }
       });
@@ -1000,7 +1003,7 @@ async function tryLinkedin(person) {
   }
 
   person.linkedinBtn.click();
-  await sleep(400);
+  await sleep(900);
   await handleLinkedinModalAfterOpen(person.name);
 }
 
@@ -1061,6 +1064,7 @@ async function handleLinkedinModalAfterOpen(personName) {
       pendingLinkedinClaimedTabId: null,
       lastLinkedinDoneRunId: null,
       lastLinkedinDoneAt: null,
+      lastLinkedinDoneReason: null,
     }, resolve);
   });
 
@@ -1103,6 +1107,7 @@ async function handleLinkedinModalAfterOpen(personName) {
   // Start waiting before opening/activating LinkedIn so a very fast completion
   // cannot race past this Jobright content script.
   const donePromise = waitForLinkedinDone(linkedinRunId);
+  linkedinDoneReason = "sent";
 
   await new Promise((resolve) => {
     chrome.storage.local.set({
@@ -1118,6 +1123,7 @@ async function handleLinkedinModalAfterOpen(personName) {
   });
 
   if (usePreload && linkedinTabId) {
+    await sleep(800);
     log(`${realPersonName}: LinkedIn profile ready. Waiting for you to hit Send.`);
     chrome.tabs.update(linkedinTabId, { active: true });
     closeAnyModal();
@@ -1128,6 +1134,19 @@ async function handleLinkedinModalAfterOpen(personName) {
   }
 
   await donePromise;
+
+  if (linkedinDoneReason && linkedinDoneReason !== "sent") {
+    if (linkedinDoneReason === "already-handled") {
+      markContactedLocally("linkedin", realPersonName, {
+        name: realPersonName,
+        linkedinUrl: profileUrl || "",
+      });
+    }
+    log(`${realPersonName}: LinkedIn step skipped (${linkedinDoneReason}). Moving to the next person.`);
+    await honorRunControls();
+    return;
+  }
+
   // Mark only after the LinkedIn step finishes. Do not mark placeholder names
   // like Unknown before opening LinkedIn, otherwise every later Unknown row is
   // treated as a duplicate and skipped.
